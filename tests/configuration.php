@@ -9,10 +9,10 @@ $method = new ReflectionMethod($application, 'targets');
 
 $single = $method->invoke($application, [
     'project' => ['name' => 'Deployment Test'],
-    'server' => ['prod_deploy_path' => '/mnt/nfs/sites/deployment-testing'],
+    'hosts' => ['website' => ['prod_deploy_path' => '/mnt/nfs/sites/deployment-testing']],
 ], 'prod');
-assert(array_keys($single) === ['default'], 'A display name containing spaces must not become a host alias');
-assert($single['default']['deploy_path'] === '/mnt/nfs/sites/deployment-testing');
+assert(array_keys($single) === ['website'], 'A display name containing spaces must not become a host alias');
+assert($single['website']['deploy_path'] === '/mnt/nfs/sites/deployment-testing');
 
 $multi = $method->invoke($application, [
     'project' => ['name' => 'Reflex Group'],
