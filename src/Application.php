@@ -38,6 +38,17 @@ final class Application
                 $this->checkTools($config);
                 return 0;
             }
+            if ($command === 'test-connection') {
+                $this->validate($config, $targets);
+                $this->checkTools($config);
+                $transport = new Transport($projectRoot);
+                try {
+                    $connection = $transport->prepare($config);
+                    return $this->testConnection($config, $connection, $projectRoot);
+                } finally {
+                    $transport->cleanup();
+                }
+            }
             if (!in_array($command, ['deploy', 'rollback'], true)) throw new \RuntimeException("Unknown command: $command");
             $this->validate($config, $targets);
             $all = isset($options['all']);
@@ -74,6 +85,40 @@ final class Application
             fwrite(STDERR, 'ssdeploy: ' . $e->getMessage() . "\n");
             return 1;
         }
+    }
+
+    private function testConnection(array $config, array $connection, string $projectRoot): int
+    {
+        $server = $config['server'];
+        $mode = $server['connection'] ?? 'ssh';
+        $host = $connection['hostname'];
+        $port = (string) ($server['port'] ?? 22);
+        $remote = $server['user'] . '@' . $host;
+
+        $args = ['ssh'];
+        if (!empty($connection['ssh_config'])) {
+            array_push($args, '-F', $connection['ssh_config']);
+        }
+        array_push($args,
+            '-o', 'BatchMode=yes',
+            '-o', 'ConnectTimeout=15',
+            '-o', 'ConnectionAttempts=1',
+            '-p', $port,
+            $remote,
+            'printf "Connected as: "; id -un; printf "Hostname: "; hostname'
+        );
+
+        echo "Testing " . strtoupper($mode) . " connection to $remote (port $port)...\n";
+        $process = new Process($args, $projectRoot);
+        $process->setTimeout(60);
+        $process->run();
+        if (!$process->isSuccessful()) {
+            fwrite(STDERR, "Connection failed:\n" . $process->getErrorOutput() . $process->getOutput());
+            return 1;
+        }
+        echo $process->getOutput();
+        echo "Connection successful. No deployment files were changed.\n";
+        return 0;
     }
 
     private function showDeploymentSummary(string $command, array $config, array $targets, string $stage, int $workers, string $projectRoot): void
@@ -238,6 +283,7 @@ ssdeploy — Silverstripe deployment CLI
 
   ssdeploy sites
   ssdeploy check
+  ssdeploy test-connection [--stage=staging]
   ssdeploy deploy [site] [--all] [--stage=staging] [--workers=3] [--dry-run] [--yes]
   ssdeploy rollback [site] [--stage=prod] [--yes]
 
