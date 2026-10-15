@@ -148,7 +148,18 @@ task('deploy:after_symlink', function () use ($config) {
     foreach ($config['deploy']['after_symlink'] ?? [] as $cmd) run('cd {{release_path}} && ' . $cmd);
 });
 
-before('deploy:prepare', 'git:check_clean');
+task('build:local', function () use ($config) {
+    foreach ($config['build']['local'] ?? [] as $command) {
+        if (!is_string($command) || trim($command) === '') {
+            throw new \RuntimeException('build.local commands must be non-empty strings');
+        }
+        writeln('<info>Running locally:</info> ' . $command);
+        runLocally('cd ' . escapeshellarg(getcwd()) . ' && ' . $command);
+    }
+});
+
+before('build:local', 'git:check_clean');
+before('deploy:prepare', 'build:local');
 before('deploy:shared', 'deploy:rsync');
 after('deploy:shared', 'deploy:composer');
 after('deploy:composer', 'deploy:assets');
