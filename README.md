@@ -21,6 +21,7 @@ vendor/bin/ssdeploy check
 vendor/bin/ssdeploy test-connection
 vendor/bin/ssdeploy deploy logixs --dry-run
 vendor/bin/ssdeploy deploy logixs
+vendor/bin/ssdeploy deploy logixs test-site --workers=2
 vendor/bin/ssdeploy deploy --all --workers=3
 vendor/bin/ssdeploy deploy --stage=prod
 vendor/bin/ssdeploy rollback logixs
@@ -32,7 +33,7 @@ A bare `deploy` selects every configured site; `--all` remains available as an e
 
 Run `vendor/bin/ssdeploy init` once in the project root. This creates three files **only if absent**: `deploy` (an executable Bash wrapper), `deploy.yml` (a documented SSH starter configuration with one host), and `.deployignore` (rsync exclusions). Existing files are skipped without modification. Review the generated YAML and supply the real server, AWS account, and deployment paths before deploying. Running `init` again is safe and reports which files already exist.
 
-The generated wrapper is deployment-only: `./deploy` (all sites), `./deploy website` (one site), or `./deploy --stage=prod` (all sites at their production paths). For administrative commands such as `sites`, `check`, `test-connection` and `rollback`, use `vendor/bin/ssdeploy`. Commit the three scaffolding files to your project repository.
+The generated wrapper is deployment-only: `./deploy` (all sites), `./deploy website` (one site), `./deploy website another-site --workers=2` (selected sites), or `./deploy --stage=prod` (all sites at their production paths). For administrative commands such as `sites`, `check`, `test-connection` and `rollback`, use `vendor/bin/ssdeploy`. Commit the three scaffolding files to your project repository.
 
 ## deploy.yml configuration reference
 
@@ -126,9 +127,10 @@ deployment:
 vendor/bin/ssdeploy sites
 vendor/bin/ssdeploy deploy test-site
 vendor/bin/ssdeploy deploy --workers=2
+vendor/bin/ssdeploy deploy test-site customer-one --workers=2
 ```
 
-The `hosts` keys (`test-site`, `customer-one`) are the CLI site selectors. The optional `name` field is descriptive; selection uses the alias, not the display name. A bare `deploy` command deploys **every** configured host; `--all` does the same. Use a named target while trialling a new configuration.
+The `hosts` keys (`test-site`, `customer-one`) are the CLI site selectors. The optional `name` field is descriptive; selection uses the alias, not the display name. A bare `deploy` command deploys **every** configured host; `--all` does the same. List one or more site aliases to deploy only those sites, in the order supplied. Duplicate or unknown aliases cause an error. Use named targets while trialling a new configuration.
 
 All hosts currently share the `server` connection settings. A `hosts` entry changes the destination path, not the AWS instance, SSH user, or transport. Deployment destinations must be specified under `hosts`; `server.deploy_path`, `server.staging_deploy_path` and `server.prod_deploy_path` are not supported.
 
