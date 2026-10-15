@@ -11,9 +11,9 @@ deployment:
   keep_releases: 2
 hosts:
   logixs:
-    deploy_path: /mnt/nfs/sites/logixs
+    deploy_path: /var/www/sites/logixs
   joshua-robert:
-    deploy_path: /mnt/nfs/sites/joshua-robert
+    deploy_path: /var/www/sites/joshua-robert
 aws:
   aws_account_id: 'YOUR_AWS_ACCOUNT_ID'
   aws_region: eu-west-2
