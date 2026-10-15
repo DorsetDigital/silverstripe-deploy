@@ -5,8 +5,7 @@ server:
   instance_id: i-0123456789abcdef0
   region: eu-west-2
   user: ubuntu
-  # host key must be pre-trusted; do not disable verification
-  known_hosts_file: ~/.ssh/known_hosts
+  # Default SSM trust: accept-new with a temporary known_hosts file
 deployment:
   workers: 3
   keep_releases: 2
