@@ -78,13 +78,16 @@ final class Application
 
     private function showDeploymentSummary(string $command, array $config, array $targets, string $stage, int $workers, string $projectRoot): void
     {
-        $git = new Process(['git', 'branch', '--show-current'], $projectRoot);
-        $git->mustRun();
-        $branch = trim($git->getOutput());
-        if ($branch === '') {
-            $git = new Process(['git', 'rev-parse', '--short', 'HEAD'], $projectRoot);
+        $branch = 'Not version controlled';
+        if ($this->isGitRepository($projectRoot)) {
+            $git = new Process(['git', 'branch', '--show-current'], $projectRoot);
             $git->mustRun();
-            $branch = trim($git->getOutput()) . ' (detached HEAD)';
+            $branch = trim($git->getOutput());
+            if ($branch === '') {
+                $git = new Process(['git', 'rev-parse', '--short', 'HEAD'], $projectRoot);
+                $git->mustRun();
+                $branch = trim($git->getOutput()) . ' (detached HEAD)';
+            }
         }
         $server = $config['server'];
         $transport = $server['connection'] ?? 'ssh';
@@ -166,12 +169,22 @@ final class Application
         echo "Local transport prerequisites available.\n";
     }
 
+    private function isGitRepository(string $projectRoot): bool
+    {
+        $git = new Process(['git', '-C', $projectRoot, 'rev-parse', '--show-toplevel']);
+        $git->run();
+        return $git->isSuccessful()
+            && realpath(trim($git->getOutput())) === realpath($projectRoot);
+    }
+
     private function prepareLocalBuild(array $config, string $projectRoot): void
     {
-        $git = new Process(['git', 'status', '--porcelain'], $projectRoot);
-        $git->mustRun();
-        if (trim($git->getOutput()) !== '') {
-            throw new \RuntimeException('Working tree is not clean. Commit or stash changes before deploying.');
+        if ($this->isGitRepository($projectRoot)) {
+            $git = new Process(['git', 'status', '--porcelain'], $projectRoot);
+            $git->mustRun();
+            if (trim($git->getOutput()) !== '') {
+                throw new \RuntimeException('Working tree is not clean. Commit or stash changes before deploying.');
+            }
         }
         foreach ($config['build']['local'] ?? [] as $command) {
             if (!is_string($command) || trim($command) === '') {
