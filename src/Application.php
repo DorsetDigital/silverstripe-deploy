@@ -60,18 +60,24 @@ final class Application
             }
             if (!in_array($command, ['deploy', 'rollback'], true)) throw new \RuntimeException("Unknown command: $command");
             $this->validate($config, $targets);
-            $site = $options['_'][0] ?? null;
-            if (count($options['_']) > 1) throw new \RuntimeException('Specify only one site alias.');
+            $sites = $options['_'];
             $all = isset($options['all']);
-            if ($all && $site !== null) throw new \RuntimeException('Specify a site OR --all, not both.');
-            if ($command === 'rollback' && $all) throw new \RuntimeException('Batch rollback is deliberately unsupported.');
-            if ($site !== null) {
-                if (!isset($targets[$site])) throw new \RuntimeException("Unknown site: $site");
-                $targets = [$site => $targets[$site]];
+            if ($all && $sites !== []) throw new \RuntimeException('Specify site aliases OR --all, not both.');
+            if ($command === 'rollback' && ($all || count($sites) > 1)) {
+                throw new \RuntimeException('Batch rollback is deliberately unsupported.');
+            }
+            if ($sites !== []) {
+                $selected = [];
+                foreach ($sites as $site) {
+                    if (!isset($targets[$site])) throw new \RuntimeException("Unknown site: $site");
+                    if (isset($selected[$site])) throw new \RuntimeException("Duplicate site: $site");
+                    $selected[$site] = $targets[$site];
+                }
+                $targets = $selected;
             } elseif ($command === 'rollback' && count($targets) !== 1) {
                 throw new \RuntimeException('Specify a site alias for rollback.');
             }
-            // For deploy, no site alias means every configured target, even for one site.
+            // With deploy, no site aliases means all configured targets.
             $workers = (int) ($options['workers'] ?? $config['deployment']['workers'] ?? 3);
             if ($workers < 1 || $workers > 10) throw new \RuntimeException('Worker count must be 1–10.');
             $this->showDeploymentSummary($command, $config, $targets, $stage, $workers, $projectRoot);
@@ -422,7 +428,7 @@ ssdeploy — Silverstripe deployment CLI
   ssdeploy sites
   ssdeploy check
   ssdeploy test-connection [--stage=staging]
-  ssdeploy deploy [site] [--all] [--stage=staging] [--workers=3] [--dry-run] [--yes]
+  ssdeploy deploy [site ...] [--all] [--stage=staging] [--workers=3] [--dry-run] [--yes]
   ssdeploy rollback [site] [--stage=prod] [--yes]
 
 Run from the project directory containing deploy.yml.
