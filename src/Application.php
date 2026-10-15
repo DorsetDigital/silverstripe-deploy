@@ -60,18 +60,20 @@ final class Application
             }
             if (!in_array($command, ['deploy', 'rollback'], true)) throw new \RuntimeException("Unknown command: $command");
             $this->validate($config, $targets);
-            $all = isset($options['all']);
             $site = $options['_'][0] ?? null;
+            if (count($options['_']) > 1) throw new \RuntimeException('Specify only one site alias.');
+            $all = isset($options['all']);
             if ($all && $site !== null) throw new \RuntimeException('Specify a site OR --all, not both.');
-            if (!$all) {
-                if ($site === null && count($targets) === 1) $site = array_key_first($targets);
-                if ($site === null) throw new \RuntimeException('Specify a site alias or --all.');
+            if ($command === 'rollback' && $all) throw new \RuntimeException('Batch rollback is deliberately unsupported.');
+            if ($site !== null) {
                 if (!isset($targets[$site])) throw new \RuntimeException("Unknown site: $site");
                 $targets = [$site => $targets[$site]];
+            } elseif ($command === 'rollback' && count($targets) !== 1) {
+                throw new \RuntimeException('Specify a site alias for rollback.');
             }
+            // For deploy, no site alias means every configured target, even for one site.
             $workers = (int) ($options['workers'] ?? $config['deployment']['workers'] ?? 3);
             if ($workers < 1 || $workers > 10) throw new \RuntimeException('Worker count must be 1–10.');
-            if ($command === 'rollback' && $all) throw new \RuntimeException('Batch rollback is deliberately unsupported.');
             $this->showDeploymentSummary($command, $config, $targets, $stage, $workers, $projectRoot);
             if (isset($options['dry-run'])) {
                 echo "Dry run: no commands executed.\n";
