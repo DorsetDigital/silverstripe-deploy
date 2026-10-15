@@ -15,6 +15,7 @@ Copy and adapt one of the examples to your project root as `deploy.yml`. The pac
 ```shell
 vendor/bin/ssdeploy sites
 vendor/bin/ssdeploy check
+vendor/bin/ssdeploy test-connection
 vendor/bin/ssdeploy deploy logixs --dry-run
 vendor/bin/ssdeploy deploy logixs
 vendor/bin/ssdeploy deploy --all --workers=3
@@ -55,3 +56,13 @@ Production compatibility with the PHP image, shell utilities, file permissions a
 The default deployment stage is **staging**, matching the original single-site recipe. Production deployments require `--stage=prod`. Before any deployment or rollback, the CLI displays the project name, current Git branch, stage, connection method, destination server, user, and each target's deployment path. Multi-site confirmations also show the worker limit. `--dry-run` prints the same summary without running build or deployment commands.
 
 Single-site project names may contain spaces (e.g. `Deployment Test`); the CLI uses the internal alias `default` rather than interpreting the display name as a host selector.
+
+## Read-only connection test
+
+With `server.connection: ssh` or `ssm` configured in `deploy.yml`, run:
+
+```shell
+vendor/bin/ssdeploy test-connection
+```
+
+This checks local tools, prepares the configured transport, and uses SSH to execute only `id -un` and `hostname` remotely. It does not invoke Deployer, rsync, Docker, build tasks or deployment directories. For SSM, EC2 Instance Connect temporarily registers a public key and Session Manager opens the tunnel, so AWS session activity still occurs. The command keeps host-key verification enabled; a missing or mismatched trusted SSH host key will cause a failed test rather than being accepted automatically. Exit status is nonzero on failure. Temporary key material is removed after the test.
