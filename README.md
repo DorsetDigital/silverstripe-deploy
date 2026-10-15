@@ -18,7 +18,7 @@ vendor/bin/ssdeploy check
 vendor/bin/ssdeploy deploy logixs --dry-run
 vendor/bin/ssdeploy deploy logixs
 vendor/bin/ssdeploy deploy --all --workers=3
-vendor/bin/ssdeploy deploy --stage=staging
+vendor/bin/ssdeploy deploy --stage=prod
 vendor/bin/ssdeploy rollback logixs
 ```
 
@@ -49,3 +49,9 @@ Production compatibility with the PHP image, shell utilities, file permissions a
 - `assets` assumes site-specific `.env` variables are read via `dotenv` and writes the configured output directory.
 - Currently uses `node:14` by default for compatibility with the original project; this is an **end-of-life Node version** and should be upgraded as a separate compatibility project.
 - First version requires further integration testing, particularly SSH host key treatment and how Deployer forwards SSH options to all connections.
+
+## Deployment confirmation and defaults
+
+The default deployment stage is **staging**, matching the original single-site recipe. Production deployments require `--stage=prod`. Before any deployment or rollback, the CLI displays the project name, current Git branch, stage, connection method, destination server, user, and each target's deployment path. Multi-site confirmations also show the worker limit. `--dry-run` prints the same summary without running build or deployment commands.
+
+Single-site project names may contain spaces (e.g. `Deployment Test`); the CLI uses the internal alias `default` rather than interpreting the display name as a host selector.
