@@ -5,8 +5,10 @@ server:
   host: deploy
   user: ubuntu
   port: 22
-  staging_deploy_path: /mnt/nfs/sites/nap-transport-staging
-  prod_deploy_path: /mnt/nfs/sites/nap-transport
+hosts:
+  website:
+    staging_deploy_path: /mnt/nfs/sites/nap-transport-staging
+    prod_deploy_path: /mnt/nfs/sites/nap-transport
 aws:
   aws_account_id: 'YOUR_AWS_ACCOUNT_ID'
   aws_region: eu-west-2
