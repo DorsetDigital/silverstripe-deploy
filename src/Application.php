@@ -235,7 +235,17 @@ IGNORE,
         $output->writeln('<info>You are about to ' . $esc($command) . ':</info>');
         $output->writeln('<comment>Project:</comment> ' . $esc((string) $config['project']['name']));
         $output->writeln('<comment>Git branch:</comment> ' . $esc($branch));
-        $output->writeln('<comment>Stage:</comment> <info>' . $esc($stage) . '</info>');
+        $stageRelevant = false;
+        foreach (array_keys($targets) as $alias) {
+            $host = $config['hosts'][$alias] ?? [];
+            if (!isset($host['deploy_path'])) {
+                $stageRelevant = true;
+                break;
+            }
+        }
+        if ($stageRelevant) {
+            $output->writeln('<comment>Stage:</comment> <info>' . $esc($stage) . '</info>');
+        }
         $output->writeln('<comment>Connection:</comment> ' . $esc($transport));
         $output->writeln('<comment>Server:</comment> ' . $esc((string) $destination));
         $output->writeln('<comment>User:</comment> ' . $esc((string) $server['user']));
