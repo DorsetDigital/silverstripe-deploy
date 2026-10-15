@@ -4,13 +4,15 @@ A Composer-distributed command-line frontend to Deployer 7. One shared recipe fo
 
 ## Install
 
-Publish this repository under `dorsetdigital/silverstripe-deploy`, then install in each project:
+Install in each project. Until v0.1.0 is tagged, use the development branch:
 
 ```shell
-composer require --dev dorsetdigital/silverstripe-deploy:^0.1
+composer require --dev dorsetdigital/silverstripe-deploy:dev-feature/initial-ssdeploy-preview
 ```
 
-Copy and adapt one of the examples to your project root as `deploy.yml`. The package supplies the executable (`vendor/bin/ssdeploy`), recipe, and worker queue; no PHP deploy script is needed in project repositories.
+After a v0.1.0 release is published, use a tagged constraint (for example `^0.1`).
+
+Create a `deploy.yml` in your project root (see the configuration reference below). The package supplies the executable (`vendor/bin/ssdeploy`), recipe, and worker queue; no PHP deploy script is needed in project repositories.
 
 ```shell
 vendor/bin/ssdeploy sites
@@ -24,6 +26,187 @@ vendor/bin/ssdeploy rollback logixs
 ```
 
 Only `deploy --all` spawns the worker queue. Every process selects exactly one site and deploys to its already-provisioned release root. Queue stops accepting new sites only after the list is empty; individual failures do **not** undo successful deployments. Confirm once before spawning workers. Do not run two deployment batches against the same site simultaneously.
+
+## deploy.yml configuration reference
+
+Run `ssdeploy` from the project directory containing `deploy.yml`. A single configuration supports both single-site and multi-site deployments; there is **no separate mode switch**. Supplying a non-empty `hosts` map enables individually selectable site aliases. The same project files are uploaded to each selected site, while each target has its own release directory and shared environment file.
+
+### Single-site example (separate staging and production paths)
+
+```yaml
+project:
+  name: Example CMS
+
+server:
+  connection: ssh
+  host: deploy
+  user: ubuntu
+  port: 22
+  staging_deploy_path: /mnt/nfs/sites/example-staging
+  prod_deploy_path: /mnt/nfs/sites/example-production
+
+aws:
+  aws_account_id: "123456789012"
+  aws_region: eu-west-2
+
+php:
+  version: "8.3"
+
+composer:
+  install: true
+  install_dev: false
+
+silverstripe:
+  dev_build: true
+
+shared_dirs:
+  - public/assets
+shared_files:
+  - .env
+```
+
+```shell
+vendor/bin/ssdeploy deploy                 # staging (default)
+vendor/bin/ssdeploy deploy --stage=prod    # production
+```
+
+With no `hosts` map, the CLI uses the internal alias `default`. `project.name` is only a display/application name and can include spaces.
+
+For a single destination instead of separate stages, configure `server.deploy_path` and omit both stage-specific paths.
+
+### Multi-site example (one destination per site)
+
+```yaml
+project:
+  name: Example Network
+
+server:
+  connection: ssm
+  instance_id: i-0123456789abcdef0
+  region: eu-west-2
+  user: ubuntu
+  port: 22
+
+hosts:
+  test-site:
+    name: Test Site
+    deploy_path: /mnt/nfs/sites/test-site
+  customer-one:
+    name: Customer One
+    deploy_path: /mnt/nfs/sites/customer-one
+
+aws:
+  aws_account_id: "123456789012"
+  aws_region: eu-west-2
+
+php:
+  version: "8.3"
+
+shared_dirs:
+  - public/assets
+shared_files:
+  - .env
+
+deployment:
+  workers: 2
+  keep_releases: 2
+```
+
+```shell
+vendor/bin/ssdeploy sites
+vendor/bin/ssdeploy deploy test-site
+vendor/bin/ssdeploy deploy --all --workers=2
+```
+
+The `hosts` keys (`test-site`, `customer-one`) are the CLI site selectors. The optional `name` field is descriptive; selection uses the alias, not the display name. `--all` deploys **every** configured host, so use a named target while trialling a new configuration.
+
+All hosts currently share the `server` connection settings. A `hosts` entry changes the destination path, not the AWS instance, SSH user, or transport. With `hosts` present, paths under `server` are not used for selecting sites.
+
+### Multi-site example with staging and production
+
+```yaml
+hosts:
+  test-site:
+    staging_deploy_path: /mnt/nfs/sites/test-site-staging
+    prod_deploy_path: /mnt/nfs/sites/test-site
+  customer-one:
+    staging_deploy_path: /mnt/nfs/sites/customer-one-staging
+    prod_deploy_path: /mnt/nfs/sites/customer-one
+```
+
+```shell
+vendor/bin/ssdeploy deploy test-site                  # staging
+vendor/bin/ssdeploy deploy test-site --stage=prod     # production
+vendor/bin/ssdeploy deploy --all --stage=prod         # all production destinations
+```
+
+For each target, `deploy_path` takes precedence over `staging_deploy_path` or `prod_deploy_path`. Consequently, **do not combine a generic `deploy_path` with stage-specific paths** in one site entry unless you intentionally want the generic path to override the stage. You can mix single-path and stage-specific hosts within a project; for single-path hosts `--stage` does not change their destination. The CLI currently displays the selected stage even when every host uses `deploy_path`.
+
+The default stage is `staging`; only `staging` and `prod` are accepted. Deployment paths must be absolute, pre-existing and writable; the recipe deliberately does not create a new site root.
+
+### Available configuration keys
+
+| Section | Key | Behaviour |
+| --- | --- | --- |
+| `project` | `name` | Required project/application display name. |
+| `server` | `connection` | `ssh` (default) or `ssm`. |
+| `server` | `host` | SSH destination hostname; required with `connection: ssh`. |
+| `server` | `instance_id`, `region` | Required for SSM transport. |
+| `server` | `user`, `port` | Remote username (required); SSH port defaults to 22. |
+| `server` | `availability_zone` | Optional EC2 Instance Connect availability zone. |
+| `server` | `host_key_checking`, `known_hosts_file` | SSM host-key trust; default `accept-new` with temporary known-hosts, or `yes` with pre-provisioned file. |
+| `server` / `hosts.<alias>` | `deploy_path` | Fixed destination path, independent of stage. |
+| `server` / `hosts.<alias>` | `staging_deploy_path`, `prod_deploy_path` | Stage-specific destination paths (when generic `deploy_path` is absent). |
+| `hosts` | `<alias>` | Optional map of sites. When present, each site is selectable by alias. |
+| `deployment` | `workers` | Maximum concurrent Deployer processes, default 3; allowed range 1–10. |
+| `deployment` | `keep_releases` | Number of releases retained, default 2. |
+| `aws` | `aws_account_id`, `aws_region` | AWS ECR account and region used to form the PHP image URI; distinct from the SSM transport region. |
+| `php` | `version` | PHP ECR image suffix, default `8.3`. |
+| `composer` | `install`, `install_dev`, `show_output` | Defaults: `true`, `false`, `false`. |
+| `silverstripe` | `dev_build`, `show_output` | Defaults: `false`, `false`. |
+| `shared_dirs`, `shared_files`, `writable` | arrays | Deployer shared directories, shared files and writable directories. |
+| `exclude` | array | Additional rsync exclusions, combined with `.deployignore`; `.git`, `vendor` and `node_modules` are excluded automatically. |
+| `build.local` | array of shell commands | Run locally **once** before launching deployment workers. A failing command aborts the batch. |
+| `assets` | `enabled`, `image`, `command`, `output` | Per-site server-side Webpack build; defaults: `false`, `node:14`, `yarn webpack --config webpack.config.js`, `public/build`. |
+| `deploy` | `before_symlink`, `after_symlink` | Arrays of remote shell commands executed relative to the release path. |
+
+### Local and server-side builds
+
+To build once on the developer machine before any site deploys:
+
+```yaml
+build:
+  local:
+    - ddev exec npm run build:prod
+```
+
+To compile assets separately for every site using its own environment file:
+
+```yaml
+assets:
+  enabled: true
+  image: node:20
+  command: yarn webpack --config webpack.config.js
+  output: public/build
+```
+
+The `assets` step is optional and runs **after Composer, before Silverstripe dev/build and before activating the release**. It requires `package.json`, `yarn.lock` and `<deploy_path>/shared/.env`. The server-side task installs dependencies in a shared, locked Node cache under `/home/ubuntu/.build-cache/<project>/node`, creates an isolated temporary workspace per site on the EC2 host, copies the site's `.env` into that workspace, and copies only the compiled output directory back to its NFS release. The output path is relative to the project root. Choose an image supported by the actual project; `node:14` is only the legacy default and is end-of-life.
+
+These two kinds of build can coexist. To avoid unnecessary work, only enable the build stages your project needs. Server-side assets are currently designed for Yarn with a lockfile, not npm-only installations.
+
+### Commands and safeguards
+
+```shell
+vendor/bin/ssdeploy check
+vendor/bin/ssdeploy test-connection
+vendor/bin/ssdeploy deploy test-site --dry-run
+vendor/bin/ssdeploy deploy test-site
+vendor/bin/ssdeploy deploy --all --workers=2
+vendor/bin/ssdeploy deploy test-site --stage=prod
+vendor/bin/ssdeploy rollback test-site --stage=prod
+```
+
+`--dry-run` only shows the selection summary: it does not connect or simulate remote tasks. `--yes` suppresses the confirmation prompt. With a Git repository at the project root, deployments check that the working tree is clean before local builds. An individual failed deployment does not stop other queued sites; completed releases are not automatically rolled back. Batch rollback is unsupported.
 
 ## Transports
 
