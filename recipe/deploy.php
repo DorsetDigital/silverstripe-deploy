@@ -106,12 +106,19 @@ mkdir -p "$cache_root/dependencies" "$cache_root/workspaces" "$cache_root/yarn-c
 key=$(cd "$release" && sha256sum package.json yarn.lock | sha256sum | cut -d' ' -f1)
 deps="$cache_root/dependencies/$key"
 exec 9>"$cache_root/.install.lock"
-flock -x 9
-if [ ! -f "$deps/.ready" ]; then
+if ! flock -n 9; then
+  echo 'Node dependencies: waiting for installation lock'
+  flock -x 9
+fi
+if [ -f "$deps/.ready" ]; then
+  echo 'Node dependencies: using cached installation'
+else
+  echo 'Node dependencies: installing (cache miss)'
   rm -rf "$deps"; mkdir -p "$deps"
   cp "$release/package.json" "$release/yarn.lock" "$deps/"
   docker run --rm --user 1000:1000 -v "$deps:/usr/src/app" -v "$cache_root/yarn-cache:/tmp/yarn-cache" -e YARN_CACHE_FOLDER=/tmp/yarn-cache -w /usr/src/app "$image" sh -c 'yarn install --frozen-lockfile --non-interactive'
   touch "$deps/.ready"
+  echo 'Node dependencies: installation cached'
 fi
 flock -u 9
 workspace=$(mktemp -d "$cache_root/workspaces/build.XXXXXXXX")
