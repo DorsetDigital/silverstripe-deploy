@@ -58,6 +58,7 @@ final class Application
                 if (!in_array(strtolower(trim((string) fgets(STDIN))), ['y', 'yes'], true)) return 1;
             }
             $this->checkTools($config);
+            if ($command === 'deploy') $this->prepareLocalBuild($config, $projectRoot);
             $transport = new Transport($projectRoot);
             $transportConfig = $transport->prepare($config);
             try {
@@ -128,6 +129,24 @@ final class Application
             }
         }
         echo "Local transport prerequisites available.\n";
+    }
+
+    private function prepareLocalBuild(array $config, string $projectRoot): void
+    {
+        $git = new Process(['git', 'status', '--porcelain'], $projectRoot);
+        $git->mustRun();
+        if (trim($git->getOutput()) !== '') {
+            throw new \RuntimeException('Working tree is not clean. Commit or stash changes before deploying.');
+        }
+        foreach ($config['build']['local'] ?? [] as $command) {
+            if (!is_string($command) || trim($command) === '') {
+                throw new \RuntimeException('build.local commands must be non-empty strings');
+            }
+            echo "Running locally: $command\n";
+            $process = Process::fromShellCommandline($command, $projectRoot);
+            $process->setTimeout(null);
+            $process->mustRun(function ($type, $output): void { echo $output; });
+        }
     }
 
     private function queue(string $action, array $targets, int $workers, string $configFile, array $transport, string $projectRoot, string $stage): int
