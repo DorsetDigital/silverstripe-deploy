@@ -10,9 +10,10 @@ $config = Yaml::parseFile(getenv('SSDEPLOY_CONFIG') ?: getcwd() . '/deploy.yml')
 $alias = getenv('SSDEPLOY_TARGET');
 if (!$alias) throw new \RuntimeException('SSDEPLOY_TARGET missing');
 $server = $config['server'];
-$hostConfig = $config['hosts'][$alias] ?? [];
+$hostConfig = $config['hosts'][$alias] ?? null;
+if (!is_array($hostConfig)) throw new \RuntimeException("Unknown or invalid site alias: $alias");
 $stage = getenv('SSDEPLOY_STAGE') ?: 'prod';
-$deployPath = $hostConfig['deploy_path'] ?? $hostConfig[$stage . '_deploy_path'] ?? $server[$stage . '_deploy_path'] ?? $server['deploy_path'] ?? null;
+$deployPath = $hostConfig['deploy_path'] ?? $hostConfig[$stage . '_deploy_path'] ?? null;
 if (!$deployPath) throw new \RuntimeException('Missing deploy path');
 $hostname = getenv('SSDEPLOY_TRANSPORT_HOST') ?: ($server['host'] ?? null);
 if (!$hostname) throw new \RuntimeException('Missing deployment host');
