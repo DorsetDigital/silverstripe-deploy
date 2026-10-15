@@ -4,6 +4,11 @@ namespace DorsetDigital\SSDeploy;
 
 use Symfony\Component\Yaml\Yaml;
 use Symfony\Component\Process\Process;
+use Symfony\Component\Console\Output\ConsoleOutput;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Helper\QuestionHelper;
+use Symfony\Component\Console\Question\ConfirmationQuestion;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 
 final class Application
 {
@@ -69,8 +74,8 @@ final class Application
                 return 0;
             }
             if (!isset($options['yes'])) {
-                fwrite(STDOUT, 'Proceed? [y/N] ');
-                if (!in_array(strtolower(trim((string) fgets(STDIN))), ['y', 'yes'], true)) return 1;
+                $question = new ConfirmationQuestion('Proceed? [y/N] ', false);
+                if (!(new QuestionHelper())->ask(new ArrayInput([]), new ConsoleOutput(), $question)) return 1;
             }
             $this->checkTools($config);
             if ($command === 'deploy') $this->prepareLocalBuild($config, $projectRoot);
@@ -140,19 +145,22 @@ final class Application
             ? $server['instance_id']
             : $server['host'];
 
-        echo "\nYou are about to " . $command . ":\n";
-        echo "Project: " . $config['project']['name'] . "\n";
-        echo "Git branch: $branch\n";
-        echo "Stage: $stage\n";
-        echo "Connection: $transport\n";
-        echo "Server: $destination\n";
-        echo "User: " . $server['user'] . "\n";
-        echo "Targets:\n";
+        $output = new ConsoleOutput();
+        $esc = static fn (string $value): string => OutputFormatter::escape($value);
+        $output->writeln('');
+        $output->writeln('<info>You are about to ' . $esc($command) . ':</info>');
+        $output->writeln('<comment>Project:</comment> ' . $esc((string) $config['project']['name']));
+        $output->writeln('<comment>Git branch:</comment> ' . $esc($branch));
+        $output->writeln('<comment>Stage:</comment> <info>' . $esc($stage) . '</info>');
+        $output->writeln('<comment>Connection:</comment> ' . $esc($transport));
+        $output->writeln('<comment>Server:</comment> ' . $esc((string) $destination));
+        $output->writeln('<comment>User:</comment> ' . $esc((string) $server['user']));
+        $output->writeln('<comment>Targets:</comment>');
         foreach ($targets as $alias => $target) {
-            echo "  $alias -> " . $target['deploy_path'] . "\n";
+            $output->writeln('  <info>' . $esc((string) $alias) . '</info> -> ' . $esc((string) $target['deploy_path']));
         }
-        if (count($targets) > 1) echo "Concurrent workers: $workers\n";
-        echo "\n";
+        if (count($targets) > 1) $output->writeln('<comment>Concurrent workers:</comment> ' . $workers);
+        $output->writeln('');
     }
 
     private function options(array $args): array
