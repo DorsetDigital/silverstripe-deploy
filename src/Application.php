@@ -178,24 +178,28 @@ final class Application
 
     private function targets(array $config, string $stage): array
     {
-        $server = $config['server'] ?? [];
-        if (!empty($config['hosts'])) {
-            $targets = [];
-            foreach ($config['hosts'] as $alias => $host) {
-                $path = $host['deploy_path'] ?? $host[$stage . '_deploy_path'] ?? null;
-                if ($path === null) throw new \RuntimeException("Missing deploy_path for $alias");
-                $targets[$alias] = ['deploy_path' => $path];
-            }
-            return $targets;
+        $hosts = $config['hosts'] ?? null;
+        if (!is_array($hosts) || $hosts === []) {
+            throw new \RuntimeException('hosts must contain at least one site; define deployment paths under hosts.<alias>.');
         }
-        $path = $server[$stage . '_deploy_path'] ?? $server['deploy_path'] ?? null;
-        if (!$path) throw new \RuntimeException("No deployment path for stage $stage");
-        return ['default' => ['deploy_path' => $path]];
+        $targets = [];
+        foreach ($hosts as $alias => $host) {
+            if (!is_array($host)) throw new \RuntimeException("Invalid host configuration for $alias");
+            $path = $host['deploy_path'] ?? $host[$stage . '_deploy_path'] ?? null;
+            if (!$path) throw new \RuntimeException("Missing deploy_path or {$stage}_deploy_path for $alias");
+            $targets[$alias] = ['deploy_path' => $path];
+        }
+        return $targets;
     }
 
     private function validate(array $config, array $targets): void
     {
         if (empty($config['project']['name'])) throw new \RuntimeException('project.name required');
+        foreach (['deploy_path', 'staging_deploy_path', 'prod_deploy_path'] as $key) {
+            if (array_key_exists($key, $config['server'] ?? [])) {
+                throw new \RuntimeException("server.$key is no longer supported; move deployment paths under hosts.<alias>.");
+            }
+        }
         if (empty($config['server']['user'])) throw new \RuntimeException('server.user required');
         $type = $config['server']['connection'] ?? 'ssh';
         if (!in_array($type, ['ssh', 'ssm'], true)) throw new \RuntimeException('connection must be ssh or ssm');
