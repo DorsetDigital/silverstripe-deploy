@@ -26,13 +26,13 @@ vendor/bin/ssdeploy deploy --stage=prod
 vendor/bin/ssdeploy rollback logixs
 ```
 
-Only `deploy --all` spawns the worker queue. Every process selects exactly one site and deploys to its already-provisioned release root. Queue stops accepting new sites only after the list is empty; individual failures do **not** undo successful deployments. Confirm once before spawning workers. Do not run two deployment batches against the same site simultaneously.
+A bare `deploy` selects every configured site; `--all` remains available as an explicit alias. Every process selects exactly one site and deploys to its already-provisioned release root. Queue stops accepting new sites only after the list is empty; individual failures do **not** undo successful deployments. Confirm once before spawning workers. Do not run two deployment batches against the same site simultaneously.
 
 ## Project setup
 
 Run `vendor/bin/ssdeploy init` once in the project root. This creates three files **only if absent**: `deploy` (an executable Bash wrapper), `deploy.yml` (a documented SSH starter configuration with one host), and `.deployignore` (rsync exclusions). Existing files are skipped without modification. Review the generated YAML and supply the real server, AWS account, and deployment paths before deploying. Running `init` again is safe and reports which files already exist.
 
-The generated wrapper is deployment-only: `./deploy website`, `./deploy --all`, or `./deploy website --stage=prod`. For administrative commands such as `sites`, `check`, `test-connection` and `rollback`, use `vendor/bin/ssdeploy`. Commit the three scaffolding files to your project repository.
+The generated wrapper is deployment-only: `./deploy` (all sites), `./deploy website` (one site), or `./deploy --stage=prod` (all sites at their production paths). For administrative commands such as `sites`, `check`, `test-connection` and `rollback`, use `vendor/bin/ssdeploy`. Commit the three scaffolding files to your project repository.
 
 ## deploy.yml configuration reference
 
@@ -80,7 +80,7 @@ vendor/bin/ssdeploy deploy                 # staging (default)
 vendor/bin/ssdeploy deploy --stage=prod    # production
 ```
 
-With a single entry in `hosts`, the CLI automatically selects it for `deploy` and `rollback`, so naming the site is optional. `project.name` is only a display/application name and can include spaces.
+With a single entry in `hosts`, the CLI automatically selects it for `deploy` and `rollback`, so naming the site is optional. With multiple hosts, bare `deploy` selects them all, but `rollback` requires a named site; batch rollback is unsupported. `project.name` is only a display/application name and can include spaces.
 
 For a single destination instead of separate stages, configure `hosts.website.deploy_path` and omit the stage-specific paths.
 
@@ -125,10 +125,10 @@ deployment:
 ```shell
 vendor/bin/ssdeploy sites
 vendor/bin/ssdeploy deploy test-site
-vendor/bin/ssdeploy deploy --all --workers=2
+vendor/bin/ssdeploy deploy --workers=2
 ```
 
-The `hosts` keys (`test-site`, `customer-one`) are the CLI site selectors. The optional `name` field is descriptive; selection uses the alias, not the display name. `--all` deploys **every** configured host, so use a named target while trialling a new configuration.
+The `hosts` keys (`test-site`, `customer-one`) are the CLI site selectors. The optional `name` field is descriptive; selection uses the alias, not the display name. A bare `deploy` command deploys **every** configured host; `--all` does the same. Use a named target while trialling a new configuration.
 
 All hosts currently share the `server` connection settings. A `hosts` entry changes the destination path, not the AWS instance, SSH user, or transport. Deployment destinations must be specified under `hosts`; `server.deploy_path`, `server.staging_deploy_path` and `server.prod_deploy_path` are not supported.
 
@@ -147,10 +147,10 @@ hosts:
 ```shell
 vendor/bin/ssdeploy deploy test-site                  # staging
 vendor/bin/ssdeploy deploy test-site --stage=prod     # production
-vendor/bin/ssdeploy deploy --all --stage=prod         # all production destinations
+vendor/bin/ssdeploy deploy --stage=prod         # all production destinations
 ```
 
-For each target, `deploy_path` takes precedence over `staging_deploy_path` or `prod_deploy_path`. Consequently, **do not combine a generic `deploy_path` with stage-specific paths** in one site entry unless you intentionally want the generic path to override the stage. You can mix single-path and stage-specific hosts within a project; for single-path hosts `--stage` does not change their destination. The CLI currently displays the selected stage even when every host uses `deploy_path`.
+For each target, `deploy_path` takes precedence over `staging_deploy_path` or `prod_deploy_path`. Consequently, **do not combine a generic `deploy_path` with stage-specific paths** in one site entry unless you intentionally want the generic path to override the stage. You can mix single-path and stage-specific hosts within a project; for single-path hosts `--stage` does not change their destination. The CLI displays the stage only when at least one selected host uses stage-specific paths.
 
 The default stage is `staging`; only `staging` and `prod` are accepted. Deployment paths must be absolute, pre-existing and writable; the recipe deliberately does not create a new site root.
 
