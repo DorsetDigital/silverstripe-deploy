@@ -15,6 +15,7 @@ After a v0.1.0 release is published, use a tagged constraint (for example `^0.1`
 Create a `deploy.yml` in your project root (see the configuration reference below). The package supplies the executable (`vendor/bin/ssdeploy`), recipe, and worker queue; no PHP deploy script is needed in project repositories.
 
 ```shell
+vendor/bin/ssdeploy init
 vendor/bin/ssdeploy sites
 vendor/bin/ssdeploy check
 vendor/bin/ssdeploy test-connection
@@ -26,6 +27,12 @@ vendor/bin/ssdeploy rollback logixs
 ```
 
 Only `deploy --all` spawns the worker queue. Every process selects exactly one site and deploys to its already-provisioned release root. Queue stops accepting new sites only after the list is empty; individual failures do **not** undo successful deployments. Confirm once before spawning workers. Do not run two deployment batches against the same site simultaneously.
+
+## Project setup
+
+Run `vendor/bin/ssdeploy init` once in the project root. This creates three files **only if absent**: `deploy` (an executable Bash wrapper), `deploy.yml` (a documented SSH starter configuration with one host), and `.deployignore` (rsync exclusions). Existing files are skipped without modification. Review the generated YAML and supply the real server, AWS account, and deployment paths before deploying. Running `init` again is safe and reports which files already exist.
+
+The generated wrapper is deployment-only: `./deploy website`, `./deploy --all`, or `./deploy website --stage=prod`. For administrative commands such as `sites`, `check`, `test-connection` and `rollback`, use `vendor/bin/ssdeploy`. Commit the three scaffolding files to your project repository.
 
 ## deploy.yml configuration reference
 
