@@ -23,7 +23,11 @@ final class Application
             if (!is_file($configFile)) throw new \RuntimeException('Missing deploy.yml in current directory.');
             $config = Yaml::parseFile($configFile);
             if (!is_array($config)) throw new \RuntimeException('deploy.yml must contain a mapping.');
-            $targets = $this->targets($config, $options['stage'] ?? 'prod');
+            $stage = $options['stage'] ?? 'staging';
+            if (!is_string($stage) || !in_array($stage, ['staging', 'prod'], true)) {
+                throw new \RuntimeException('Invalid stage. Use staging or prod.');
+            }
+            $targets = $this->targets($config, $stage);
             if ($command === 'sites') {
                 foreach ($targets as $alias => $target) echo "$alias\t{$target['deploy_path']}\n";
                 return 0;
@@ -48,7 +52,7 @@ final class Application
             $workers = (int) ($options['workers'] ?? $config['deployment']['workers'] ?? 3);
             if ($workers < 1 || $workers > 10) throw new \RuntimeException('Worker count must be 1–10.');
             if ($command === 'rollback' && $all) throw new \RuntimeException('Batch rollback is deliberately unsupported.');
-            echo strtoupper($command) . ': ' . implode(', ', array_keys($targets)) . " (workers: $workers)\n";
+            $this->showDeploymentSummary($command, $config, $targets, $stage, $workers, $projectRoot);
             if (isset($options['dry-run'])) {
                 echo "Dry run: no commands executed.\n";
                 return 0;
@@ -62,7 +66,7 @@ final class Application
             $transport = new Transport($projectRoot);
             $transportConfig = $transport->prepare($config);
             try {
-                return $this->queue($command, $targets, $workers, $configFile, $transportConfig, $projectRoot, $options['stage'] ?? 'prod');
+                return $this->queue($command, $targets, $workers, $configFile, $transportConfig, $projectRoot, $stage);
             } finally {
                 $transport->cleanup();
             }
@@ -70,6 +74,37 @@ final class Application
             fwrite(STDERR, 'ssdeploy: ' . $e->getMessage() . "\n");
             return 1;
         }
+    }
+
+    private function showDeploymentSummary(string $command, array $config, array $targets, string $stage, int $workers, string $projectRoot): void
+    {
+        $git = new Process(['git', 'branch', '--show-current'], $projectRoot);
+        $git->mustRun();
+        $branch = trim($git->getOutput());
+        if ($branch === '') {
+            $git = new Process(['git', 'rev-parse', '--short', 'HEAD'], $projectRoot);
+            $git->mustRun();
+            $branch = trim($git->getOutput()) . ' (detached HEAD)';
+        }
+        $server = $config['server'];
+        $transport = $server['connection'] ?? 'ssh';
+        $destination = $transport === 'ssm'
+            ? $server['instance_id']
+            : $server['host'];
+
+        echo "\nYou are about to " . $command . ":\n";
+        echo "Project: " . $config['project']['name'] . "\n";
+        echo "Git branch: $branch\n";
+        echo "Stage: $stage\n";
+        echo "Connection: $transport\n";
+        echo "Server: $destination\n";
+        echo "User: " . $server['user'] . "\n";
+        echo "Targets:\n";
+        foreach ($targets as $alias => $target) {
+            echo "  $alias -> " . $target['deploy_path'] . "\n";
+        }
+        if (count($targets) > 1) echo "Concurrent workers: $workers\n";
+        echo "\n";
     }
 
     private function options(array $args): array
@@ -190,7 +225,7 @@ ssdeploy — Silverstripe deployment CLI
 
   ssdeploy sites
   ssdeploy check
-  ssdeploy deploy [site] [--all] [--stage=prod] [--workers=3] [--dry-run] [--yes]
+  ssdeploy deploy [site] [--all] [--stage=staging] [--workers=3] [--dry-run] [--yes]
   ssdeploy rollback [site] [--stage=prod] [--yes]
 
 Run from the project directory containing deploy.yml.
