@@ -1,6 +1,6 @@
 # Silverstripe Deploy (experimental v0.1.0)
 
-A Composer-distributed command-line frontend to Deployer 7. One shared recipe for single-site and multi-site deployments, plus a bounded worker queue. **Developer preview: not verified against production AWS/SSM.**
+A Composer-distributed command-line frontend to Deployer 7. One shared recipe and a bounded worker queue for one or many sites. **Developer preview: not verified against production AWS/SSM.**
 
 ## Install
 
@@ -29,7 +29,7 @@ Only `deploy --all` spawns the worker queue. Every process selects exactly one s
 
 ## deploy.yml configuration reference
 
-Run `ssdeploy` from the project directory containing `deploy.yml`. A single configuration supports both single-site and multi-site deployments; there is **no separate mode switch**. Supplying a non-empty `hosts` map enables individually selectable site aliases. The same project files are uploaded to each selected site, while each target has its own release directory and shared environment file.
+Run `ssdeploy` from the project directory containing `deploy.yml`. **Every project must define at least one entry in `hosts`**; a single-site deployment simply has one entry and is auto-selected when no site name is supplied. There is no separate mode switch. The same project files are uploaded to each selected site, while each target has its own release directory and shared environment file.
 
 ### Single-site example (separate staging and production paths)
 
@@ -42,8 +42,11 @@ server:
   host: deploy
   user: ubuntu
   port: 22
-  staging_deploy_path: /mnt/nfs/sites/example-staging
-  prod_deploy_path: /mnt/nfs/sites/example-production
+
+hosts:
+  website:
+    staging_deploy_path: /mnt/nfs/sites/example-staging
+    prod_deploy_path: /mnt/nfs/sites/example-production
 
 aws:
   aws_account_id: "123456789012"
@@ -70,9 +73,9 @@ vendor/bin/ssdeploy deploy                 # staging (default)
 vendor/bin/ssdeploy deploy --stage=prod    # production
 ```
 
-With no `hosts` map, the CLI uses the internal alias `default`. `project.name` is only a display/application name and can include spaces.
+With a single entry in `hosts`, the CLI automatically selects it for `deploy` and `rollback`, so naming the site is optional. `project.name` is only a display/application name and can include spaces.
 
-For a single destination instead of separate stages, configure `server.deploy_path` and omit both stage-specific paths.
+For a single destination instead of separate stages, configure `hosts.website.deploy_path` and omit the stage-specific paths.
 
 ### Multi-site example (one destination per site)
 
@@ -120,7 +123,7 @@ vendor/bin/ssdeploy deploy --all --workers=2
 
 The `hosts` keys (`test-site`, `customer-one`) are the CLI site selectors. The optional `name` field is descriptive; selection uses the alias, not the display name. `--all` deploys **every** configured host, so use a named target while trialling a new configuration.
 
-All hosts currently share the `server` connection settings. A `hosts` entry changes the destination path, not the AWS instance, SSH user, or transport. With `hosts` present, paths under `server` are not used for selecting sites.
+All hosts currently share the `server` connection settings. A `hosts` entry changes the destination path, not the AWS instance, SSH user, or transport. Deployment destinations must be specified under `hosts`; `server.deploy_path`, `server.staging_deploy_path` and `server.prod_deploy_path` are not supported.
 
 ### Multi-site example with staging and production
 
@@ -155,9 +158,9 @@ The default stage is `staging`; only `staging` and `prod` are accepted. Deployme
 | `server` | `user`, `port` | Remote username (required); SSH port defaults to 22. |
 | `server` | `availability_zone` | Optional EC2 Instance Connect availability zone. |
 | `server` | `host_key_checking`, `known_hosts_file` | SSM host-key trust; default `accept-new` with temporary known-hosts, or `yes` with pre-provisioned file. |
-| `server` / `hosts.<alias>` | `deploy_path` | Fixed destination path, independent of stage. |
-| `server` / `hosts.<alias>` | `staging_deploy_path`, `prod_deploy_path` | Stage-specific destination paths (when generic `deploy_path` is absent). |
-| `hosts` | `<alias>` | Optional map of sites. When present, each site is selectable by alias. |
+| `hosts.<alias>` | `deploy_path` | Fixed destination path, independent of stage. |
+| `hosts.<alias>` | `staging_deploy_path`, `prod_deploy_path` | Stage-specific destination paths (when generic `deploy_path` is absent). |
+| `hosts` | `<alias>` | Required, non-empty map of sites. A single site is auto-selected. |
 | `deployment` | `workers` | Maximum concurrent Deployer processes, default 3; allowed range 1–10. |
 | `deployment` | `keep_releases` | Number of releases retained, default 2. |
 | `aws` | `aws_account_id`, `aws_region` | AWS ECR account and region used to form the PHP image URI; distinct from the SSM transport region. |
@@ -238,7 +241,7 @@ Production compatibility with the PHP image, shell utilities, file permissions a
 
 The default deployment stage is **staging**, matching the original single-site recipe. Production deployments require `--stage=prod`. Before any deployment or rollback, the CLI displays the project name, current Git branch, stage, connection method, destination server, user, and each target's deployment path. Multi-site confirmations also show the worker limit. `--dry-run` prints the same summary without running build or deployment commands.
 
-Single-site project names may contain spaces (e.g. `Deployment Test`); the CLI uses the internal alias `default` rather than interpreting the display name as a host selector.
+Single-site project names may contain spaces (e.g. `Deployment Test`); the site alias is declared under `hosts` and auto-selected when it is the only entry.
 
 ## Read-only connection test
 
