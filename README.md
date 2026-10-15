@@ -52,8 +52,8 @@ server:
 
 hosts:
   website:
-    staging_deploy_path: /mnt/nfs/sites/example-staging
-    prod_deploy_path: /mnt/nfs/sites/example-production
+    staging_deploy_path: /var/www/sites/example-staging
+    prod_deploy_path: /var/www/sites/example-production
 
 aws:
   aws_account_id: "123456789012"
@@ -100,10 +100,10 @@ server:
 hosts:
   test-site:
     name: Test Site
-    deploy_path: /mnt/nfs/sites/test-site
+    deploy_path: /var/www/sites/test-site
   customer-one:
     name: Customer One
-    deploy_path: /mnt/nfs/sites/customer-one
+    deploy_path: /var/www/sites/customer-one
 
 aws:
   aws_account_id: "123456789012"
@@ -137,11 +137,11 @@ All hosts currently share the `server` connection settings. A `hosts` entry chan
 ```yaml
 hosts:
   test-site:
-    staging_deploy_path: /mnt/nfs/sites/test-site-staging
-    prod_deploy_path: /mnt/nfs/sites/test-site
+    staging_deploy_path: /var/www/sites/test-site-staging
+    prod_deploy_path: /var/www/sites/test-site
   customer-one:
-    staging_deploy_path: /mnt/nfs/sites/customer-one-staging
-    prod_deploy_path: /mnt/nfs/sites/customer-one
+    staging_deploy_path: /var/www/sites/customer-one-staging
+    prod_deploy_path: /var/www/sites/customer-one
 ```
 
 ```shell
