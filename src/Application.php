@@ -255,6 +255,28 @@ final class Application
         $active = []; $pending = array_keys($targets); $failed = []; $done = [];
         $deployerBin = $projectRoot . '/vendor/bin/dep';
         if (!is_file($deployerBin)) throw new \RuntimeException('Deployer binary missing: install package dependencies with Composer.');
+
+        // Stable colour per site, including when a worker slot is reused.
+        $palette = [36, 35, 33, 34, 32, 96, 95, 93, 94, 92];
+        $colours = [];
+        foreach (array_keys($targets) as $index => $site) {
+            $colours[$site] = $palette[$index % count($palette)];
+        }
+        $colourEnabled = function_exists('stream_isatty') && stream_isatty(STDOUT) && getenv('NO_COLOR') === false;
+        $prefix = static function (string $site) use ($colours, $colourEnabled): string {
+            $label = "[$site]";
+            return $colourEnabled ? "\033[" . $colours[$site] . "m" . $label . "\033[0m" : $label;
+        };
+        $buffers = [];
+        $writeOutput = static function (string $site, string $chunk) use (&$buffers, $prefix): void {
+            $buffers[$site] = ($buffers[$site] ?? '') . $chunk;
+            while (($newline = strpos($buffers[$site], "\n")) !== false) {
+                $line = substr($buffers[$site], 0, $newline);
+                $buffers[$site] = substr($buffers[$site], $newline + 1);
+                if ($line !== '') echo $prefix($site) . ' ' . $line . "\n";
+            }
+        };
+
         while ($pending || $active) {
             while ($pending && count($active) < $workers) {
                 $site = array_shift($pending);
@@ -267,15 +289,22 @@ final class Application
                     'SSDEPLOY_SSH_IDENTITY' => $transport['identity'] ?? '',
                 ]);
                 $process->setTimeout(null);
-                $process->start(function ($type, $buffer) use ($site) { foreach (explode("\n", rtrim($buffer, "\n")) as $line) if ($line !== '') echo "[$site] $line\n"; });
+                $process->start(static function ($type, $chunk) use ($site, $writeOutput): void {
+                    $writeOutput($site, $chunk);
+                });
                 $active[$site] = $process;
-                echo "START $site\n";
+                echo $prefix($site) . " START\n";
             }
             foreach ($active as $site => $process) {
                 if ($process->isRunning()) continue;
+                // Process termination may leave a final line without a newline.
+                if (($buffers[$site] ?? '') !== '') {
+                    echo $prefix($site) . ' ' . $buffers[$site] . "\n";
+                }
+                unset($buffers[$site]);
                 $status = $process->getExitCode();
-                if ($status === 0) { $done[] = $site; echo "DONE $site\n"; }
-                else { $failed[] = $site; echo "FAIL $site (exit $status)\n"; }
+                if ($status === 0) { $done[] = $site; echo $prefix($site) . " DONE\n"; }
+                else { $failed[] = $site; echo $prefix($site) . " FAIL (exit $status)\n"; }
                 unset($active[$site]);
             }
             if ($active) usleep(200000);
