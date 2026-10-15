@@ -118,8 +118,8 @@ server:
 
 hosts:
   website:
-    staging_deploy_path: /mnt/nfs/sites/example-staging
-    prod_deploy_path: /mnt/nfs/sites/example-production
+    staging_deploy_path: /var/www/sites/example-staging
+    prod_deploy_path: /var/www/sites/example-production
 
 aws:
   aws_account_id: 'YOUR_AWS_ACCOUNT_ID'
