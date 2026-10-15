@@ -98,7 +98,7 @@ final class Application
         }
         $path = $server[$stage . '_deploy_path'] ?? $server['deploy_path'] ?? null;
         if (!$path) throw new \RuntimeException("No deployment path for stage $stage");
-        return [($config['project']['name'] ?? 'site') => ['deploy_path' => $path]];
+        return ['default' => ['deploy_path' => $path]];
     }
 
     private function validate(array $config, array $targets): void
