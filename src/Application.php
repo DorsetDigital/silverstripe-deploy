@@ -25,6 +25,10 @@ final class Application
             if (in_array($command, ['help', '--help', '-h'], true)) {
                 $this->help(); return 0;
             }
+            if ($command === 'init') {
+                if ($options['_'] !== [] || count($options) !== 1) throw new \RuntimeException('init does not accept arguments or options.');
+                return $this->init($projectRoot);
+            }
             if (!is_file($configFile)) throw new \RuntimeException('Missing deploy.yml in current directory.');
             $config = Yaml::parseFile($configFile);
             if (!is_array($config)) throw new \RuntimeException('deploy.yml must contain a mapping.');
@@ -90,6 +94,86 @@ final class Application
             fwrite(STDERR, 'ssdeploy: ' . $e->getMessage() . "\n");
             return 1;
         }
+    }
+
+    private function init(string $projectRoot): int
+    {
+        $files = [
+            'deploy' => <<<'SH'
+#!/usr/bin/env bash
+set -e
+cd "$(dirname "$0")"
+exec ./vendor/bin/ssdeploy deploy "$@"
+SH,
+            'deploy.yml' => <<<'YAML'
+# Configure this file before deploying. See the package README for all options.
+project:
+  name: Example Project
+
+server:
+  connection: ssh
+  host: deploy
+  user: ubuntu
+  port: 22
+
+hosts:
+  website:
+    staging_deploy_path: /mnt/nfs/sites/example-staging
+    prod_deploy_path: /mnt/nfs/sites/example-production
+
+aws:
+  aws_account_id: 'YOUR_AWS_ACCOUNT_ID'
+  aws_region: eu-west-2
+
+php:
+  version: '8.3'
+
+composer:
+  install: true
+  install_dev: false
+
+silverstripe:
+  dev_build: true
+
+shared_dirs:
+  - public/assets
+shared_files:
+  - .env
+YAML,
+            '.deployignore' => <<<'IGNORE'
+# Exclude files from rsync uploads.
+.git/
+vendor/
+node_modules/
+deploy
+deploy.php
+deploy.yml
+.deployignore
+IGNORE,
+        ];
+        foreach ($files as $name => $contents) {
+            $path = $projectRoot . '/' . $name;
+            if (file_exists($path) || is_link($path)) {
+                echo "Exists (unchanged): $name\n";
+                continue;
+            }
+            // Exclusive creation avoids overwriting a file created by another process.
+            $handle = @fopen($path, 'x');
+            if ($handle === false) throw new \RuntimeException("Cannot create $path");
+            try {
+                if (fwrite($handle, $contents . "\n") !== strlen($contents) + 1) {
+                    throw new \RuntimeException("Unable to write $path");
+                }
+            } finally {
+                fclose($handle);
+            }
+            if ($name === 'deploy' && !chmod($path, 0755)) {
+                throw new \RuntimeException("Unable to make $path executable");
+            }
+            echo "Created: $name\n";
+        }
+        echo "Review deploy.yml before running a deployment.\n";
+        return 0;
     }
 
     private function testConnection(array $config, array $connection, string $projectRoot): int
@@ -322,6 +406,7 @@ final class Application
         echo <<<'TEXT'
 ssdeploy — Silverstripe deployment CLI
 
+  ssdeploy init
   ssdeploy sites
   ssdeploy check
   ssdeploy test-connection [--stage=staging]
