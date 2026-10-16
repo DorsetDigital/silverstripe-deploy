@@ -384,7 +384,12 @@ IGNORE,
                 if ($line === '') continue;
                 $tails[$site][] = $line;
                 if (count($tails[$site]) > $tailLimit) array_shift($tails[$site]);
-                if ($verbose) echo $prefix($site) . ' ' . $line . "\n";
+                // Deployer announces each task as "task deploy:...", unlike the
+                // often very noisy output of Composer, webpack and dev/build.
+                $plain = preg_replace('/\\x1B\\[[0-9;]*[A-Za-z]/', '', $line);
+                if ($verbose || preg_match('/(?:^|\\s)task\\s+[a-zA-Z][a-zA-Z0-9:_-]*/', $plain)) {
+                    echo $prefix($site) . ' ' . $line . "\n";
+                }
             }
         };
 
