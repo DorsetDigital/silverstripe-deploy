@@ -95,7 +95,7 @@ final class Application
             $transport = new Transport($projectRoot);
             $transportConfig = $transport->prepare($config);
             try {
-                return $this->queue($command, $targets, $workers, $configFile, $transportConfig, $projectRoot, $stage, isset($options['verbose']));
+                return $this->queue($command, $targets, $workers, $configFile, $transportConfig, $projectRoot, $stage, isset($options['verbose']), $config);
             } finally {
                 $transport->cleanup();
             }
@@ -357,7 +357,7 @@ IGNORE,
         }
     }
 
-    private function queue(string $action, array $targets, int $workers, string $configFile, array $transport, string $projectRoot, string $stage, bool $verbose = false): int
+    private function queue(string $action, array $targets, int $workers, string $configFile, array $transport, string $projectRoot, string $stage, bool $verbose, array $config): int
     {
         $active = []; $pending = array_keys($targets); $failed = []; $done = [];
         $deployerBin = $projectRoot . '/vendor/bin/dep';
@@ -375,8 +375,8 @@ IGNORE,
             return $colourEnabled ? "\033[" . $colours[$site] . "m" . $label . "\033[0m" : $label;
         };
         // Keep a bounded diagnostic tail for every site, even in compact mode.
-        $buffers = []; $tails = []; $tailLimit = 35;
-        $writeOutput = static function (string $site, string $chunk) use (&$buffers, &$tails, $tailLimit, $prefix, $verbose): void {
+        $buffers = []; $tails = []; $currentTasks = []; $tailLimit = 35;
+        $writeOutput = static function (string $site, string $chunk) use (&$buffers, &$tails, &$currentTasks, $tailLimit, $prefix, $verbose, $config): void {
             $buffers[$site] = ($buffers[$site] ?? '') . $chunk;
             while (($newline = strpos($buffers[$site], "\n")) !== false) {
                 $line = rtrim(substr($buffers[$site], 0, $newline), "\r");
@@ -387,7 +387,12 @@ IGNORE,
                 // Deployer announces each task as "task deploy:...", unlike the
                 // often very noisy output of Composer, webpack and dev/build.
                 $plain = preg_replace('/\\x1B\\[[0-9;]*[A-Za-z]/', '', $line);
-                if ($verbose || preg_match('/(?:^|\\s)task\\s+[a-zA-Z][a-zA-Z0-9:_-]*/', $plain)) {
+                $isTask = preg_match('/(?:^|\\s)task\\s+([a-zA-Z][a-zA-Z0-9:_-]*)/', $plain, $match);
+                if ($isTask) $currentTasks[$site] = $match[1];
+                $task = $currentTasks[$site] ?? '';
+                $showConfigured = ($task === 'deploy:composer' && ($config['composer']['show_output'] ?? false))
+                    || ($task === 'deploy:silverstripe_build' && ($config['silverstripe']['show_output'] ?? false));
+                if ($verbose || $isTask || $showConfigured) {
                     echo $prefix($site) . ' ' . $line . "\n";
                 }
             }
