@@ -95,7 +95,7 @@ final class Application
             $transport = new Transport($projectRoot);
             $transportConfig = $transport->prepare($config);
             try {
-                return $this->queue($command, $targets, $workers, $configFile, $transportConfig, $projectRoot, $stage);
+                return $this->queue($command, $targets, $workers, $configFile, $transportConfig, $projectRoot, $stage, isset($options['verbose']));
             } finally {
                 $transport->cleanup();
             }
@@ -272,7 +272,7 @@ IGNORE,
         foreach ($args as $arg) {
             if (str_starts_with($arg, '--')) {
                 [$key, $value] = array_pad(explode('=', substr($arg, 2), 2), 2, true);
-                if (!in_array($key, ['all', 'yes', 'dry-run', 'stage', 'workers'], true)) throw new \RuntimeException("Unknown option --$key");
+                if (!in_array($key, ['all', 'yes', 'dry-run', 'stage', 'workers', 'verbose'], true)) throw new \RuntimeException("Unknown option --$key");
                 $result[$key] = $value;
             } else $result['_'][] = $arg;
         }
@@ -357,7 +357,7 @@ IGNORE,
         }
     }
 
-    private function queue(string $action, array $targets, int $workers, string $configFile, array $transport, string $projectRoot, string $stage): int
+    private function queue(string $action, array $targets, int $workers, string $configFile, array $transport, string $projectRoot, string $stage, bool $verbose = false): int
     {
         $active = []; $pending = array_keys($targets); $failed = []; $done = [];
         $deployerBin = $projectRoot . '/vendor/bin/dep';
@@ -374,13 +374,17 @@ IGNORE,
             $label = "[$site]";
             return $colourEnabled ? "\033[" . $colours[$site] . "m" . $label . "\033[0m" : $label;
         };
-        $buffers = [];
-        $writeOutput = static function (string $site, string $chunk) use (&$buffers, $prefix): void {
+        // Keep a bounded diagnostic tail for every site, even in compact mode.
+        $buffers = []; $tails = []; $tailLimit = 35;
+        $writeOutput = static function (string $site, string $chunk) use (&$buffers, &$tails, $tailLimit, $prefix, $verbose): void {
             $buffers[$site] = ($buffers[$site] ?? '') . $chunk;
             while (($newline = strpos($buffers[$site], "\n")) !== false) {
-                $line = substr($buffers[$site], 0, $newline);
+                $line = rtrim(substr($buffers[$site], 0, $newline), "\r");
                 $buffers[$site] = substr($buffers[$site], $newline + 1);
-                if ($line !== '') echo $prefix($site) . ' ' . $line . "\n";
+                if ($line === '') continue;
+                $tails[$site][] = $line;
+                if (count($tails[$site]) > $tailLimit) array_shift($tails[$site]);
+                if ($verbose) echo $prefix($site) . ' ' . $line . "\n";
             }
         };
 
@@ -404,19 +408,35 @@ IGNORE,
             }
             foreach ($active as $site => $process) {
                 if ($process->isRunning()) continue;
-                // Process termination may leave a final line without a newline.
+                // Include any final unterminated line in diagnostics.
                 if (($buffers[$site] ?? '') !== '') {
-                    echo $prefix($site) . ' ' . $buffers[$site] . "\n";
+                    $line = $buffers[$site];
+                    $tails[$site][] = $line;
+                    if (count($tails[$site]) > $tailLimit) array_shift($tails[$site]);
+                    if ($verbose) echo $prefix($site) . ' ' . $line . "\n";
                 }
                 unset($buffers[$site]);
                 $status = $process->getExitCode();
-                if ($status === 0) { $done[] = $site; echo $prefix($site) . " DONE\n"; }
-                else { $failed[] = $site; echo $prefix($site) . " FAIL (exit $status)\n"; }
+                if ($status === 0) {
+                    $done[] = $site;
+                    echo $prefix($site) . " DONE\n";
+                } else {
+                    $failed[] = $site;
+                    echo $prefix($site) . " FAIL (exit $status)\n";
+                    echo $prefix($site) . " Last " . count($tails[$site] ?? []) . " log lines:\n";
+                    foreach ($tails[$site] ?? [] as $line) echo $prefix($site) . ' ' . $line . "\n";
+                }
+                unset($tails[$site]);
                 unset($active[$site]);
             }
             if ($active) usleep(200000);
         }
+        echo "\nDeployment summary:\n";
+        foreach (array_keys($targets) as $site) {
+            echo $prefix($site) . (in_array($site, $failed, true) ? ' FAILED' : ' OK') . "\n";
+        }
         echo 'Finished: ' . count($done) . ' succeeded, ' . count($failed) . " failed.\n";
+        if ($failed) echo 'Failed sites: ' . implode(', ', $failed) . "\n";
         return $failed ? 1 : 0;
     }
 
@@ -429,7 +449,7 @@ ssdeploy — Silverstripe deployment CLI
   ssdeploy sites
   ssdeploy check
   ssdeploy test-connection [--stage=staging]
-  ssdeploy deploy [site ...] [--all] [--stage=staging] [--workers=2] [--dry-run] [--yes]
+  ssdeploy deploy [site ...] [--all] [--stage=staging] [--workers=2] [--dry-run] [--yes] [--verbose]
   ssdeploy rollback [site] [--stage=prod] [--yes]
   ssdeploy unlock [site ...] [--stage=staging] [--yes]
 
