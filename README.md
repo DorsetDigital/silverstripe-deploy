@@ -224,7 +224,7 @@ vendor/bin/ssdeploy unlock test-site customer-one
 
 ## Batch output and failure summary
 
-By default, batch deployments print a short `START` / `DONE` / `FAIL` status for each site, then an ordered per-site summary identifying failures. If a site fails, its last 35 log lines are printed immediately to help diagnose the issue without searching through output from every successful deployment. This diagnostic tail is held only in memory during the run, and does not include the complete log. For the original full, interleaved per-site output, pass `--verbose`:
+By default, batch deployments show Deployer task names as progress indicators, alongside `START` / `DONE` / `FAIL` status for each site, then an ordered per-site summary identifying failures. Routine command output is suppressed unless explicitly requested with `composer.show_output: true`, `silverstripe.show_output: true`, or `--verbose`. If a site fails, its last 35 log lines are printed immediately to help diagnose the issue without searching through output from every successful deployment. This diagnostic tail is held only in memory during the run, and does not include the complete log. For the original full, interleaved per-site output, pass `--verbose`:
 
 ```shell
 ./deploy --verbose
