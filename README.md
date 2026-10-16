@@ -222,6 +222,15 @@ vendor/bin/ssdeploy unlock test-site customer-one
 
 `--dry-run` only shows the selection summary: it does not connect or simulate remote tasks. `--yes` suppresses the confirmation prompt. With a Git repository at the project root, deployments check that the working tree is clean before local builds. An individual failed deployment does not stop other queued sites; completed releases are not automatically rolled back. Batch rollback is unsupported.
 
+## Batch output and failure summary
+
+By default, batch deployments print a short `START` / `DONE` / `FAIL` status for each site, then an ordered per-site summary identifying failures. If a site fails, its last 35 log lines are printed immediately to help diagnose the issue without searching through output from every successful deployment. This diagnostic tail is held only in memory during the run, and does not include the complete log. For the original full, interleaved per-site output, pass `--verbose`:
+
+```shell
+./deploy --verbose
+vendor/bin/ssdeploy deploy test-site --verbose
+```
+
 ## Recovering failed deployments (unlock)
 
 A deployment interrupted by an instance failure, out-of-memory condition or terminated process may leave a Deployer lock behind. Once you've checked that no deployment is **still running** for the selected sites, unlock them without connecting manually to the host:
