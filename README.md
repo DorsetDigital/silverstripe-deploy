@@ -22,7 +22,7 @@ vendor/bin/ssdeploy test-connection
 vendor/bin/ssdeploy deploy logixs --dry-run
 vendor/bin/ssdeploy deploy logixs
 vendor/bin/ssdeploy deploy logixs test-site --workers=2
-vendor/bin/ssdeploy deploy --all --workers=3
+vendor/bin/ssdeploy deploy --all --workers=2
 vendor/bin/ssdeploy deploy --stage=prod
 vendor/bin/ssdeploy rollback logixs
 ```
@@ -170,7 +170,7 @@ The default stage is `staging`; only `staging` and `prod` are accepted. Deployme
 | `hosts.<alias>` | `deploy_path` | Fixed destination path, independent of stage. |
 | `hosts.<alias>` | `staging_deploy_path`, `prod_deploy_path` | Stage-specific destination paths (when generic `deploy_path` is absent). |
 | `hosts` | `<alias>` | Required, non-empty map of sites. A single site is auto-selected. |
-| `deployment` | `workers` | Maximum concurrent Deployer processes, default 3; allowed range 1–10. |
+| `deployment` | `workers` | Maximum concurrent Deployer processes, default 2; allowed range 1–10. |
 | `deployment` | `keep_releases` | Number of releases retained, default 2. |
 | `aws` | `aws_account_id`, `aws_region` | AWS ECR account and region used to form the PHP image URI; distinct from the SSM transport region. |
 | `php` | `version` | PHP ECR image suffix, default `8.3`. |
