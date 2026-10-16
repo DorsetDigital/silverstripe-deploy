@@ -78,7 +78,7 @@ final class Application
                 throw new \RuntimeException('Specify a site alias for rollback.');
             }
             // With deploy, no site aliases means all configured targets.
-            $workers = (int) ($options['workers'] ?? $config['deployment']['workers'] ?? 3);
+            $workers = (int) ($options['workers'] ?? $config['deployment']['workers'] ?? 2);
             if ($workers < 1 || $workers > 10) throw new \RuntimeException('Worker count must be 1–10.');
             $this->showDeploymentSummary($command, $config, $targets, $stage, $workers, $projectRoot);
             if (isset($options['dry-run'])) {
@@ -428,7 +428,7 @@ ssdeploy — Silverstripe deployment CLI
   ssdeploy sites
   ssdeploy check
   ssdeploy test-connection [--stage=staging]
-  ssdeploy deploy [site ...] [--all] [--stage=staging] [--workers=3] [--dry-run] [--yes]
+  ssdeploy deploy [site ...] [--all] [--stage=staging] [--workers=2] [--dry-run] [--yes]
   ssdeploy rollback [site] [--stage=prod] [--yes]
 
 Run from the project directory containing deploy.yml.
