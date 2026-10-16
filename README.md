@@ -25,6 +25,7 @@ vendor/bin/ssdeploy deploy logixs test-site --workers=2
 vendor/bin/ssdeploy deploy --all --workers=2
 vendor/bin/ssdeploy deploy --stage=prod
 vendor/bin/ssdeploy rollback logixs
+vendor/bin/ssdeploy unlock logixs
 ```
 
 A bare `deploy` selects every configured site; `--all` remains available as an explicit alias. Every process selects exactly one site and deploys to its already-provisioned release root. Queue stops accepting new sites only after the list is empty; individual failures do **not** undo successful deployments. Confirm once before spawning workers. Do not run two deployment batches against the same site simultaneously.
@@ -33,7 +34,7 @@ A bare `deploy` selects every configured site; `--all` remains available as an e
 
 Run `vendor/bin/ssdeploy init` once in the project root. This creates three files **only if absent**: `deploy` (an executable Bash wrapper), `deploy.yml` (a documented SSH starter configuration with one host), and `.deployignore` (rsync exclusions). Existing files are skipped without modification. Review the generated YAML and supply the real server, AWS account, and deployment paths before deploying. Running `init` again is safe and reports which files already exist.
 
-The generated wrapper is deployment-only: `./deploy` (all sites), `./deploy website` (one site), `./deploy website another-site --workers=2` (selected sites), or `./deploy --stage=prod` (all sites at their production paths). For administrative commands such as `sites`, `check`, `test-connection` and `rollback`, use `vendor/bin/ssdeploy`. Commit the three scaffolding files to your project repository.
+The generated wrapper is deployment-only: `./deploy` (all sites), `./deploy website` (one site), `./deploy website another-site --workers=2` (selected sites), or `./deploy --stage=prod` (all sites at their production paths). For administrative commands such as `sites`, `check`, `test-connection`, `rollback` and `unlock`, use `vendor/bin/ssdeploy`. Commit the three scaffolding files to your project repository.
 
 ## deploy.yml configuration reference
 
@@ -216,9 +217,22 @@ vendor/bin/ssdeploy deploy test-site
 vendor/bin/ssdeploy deploy --all --workers=2
 vendor/bin/ssdeploy deploy test-site --stage=prod
 vendor/bin/ssdeploy rollback test-site --stage=prod
+vendor/bin/ssdeploy unlock test-site customer-one
 ```
 
 `--dry-run` only shows the selection summary: it does not connect or simulate remote tasks. `--yes` suppresses the confirmation prompt. With a Git repository at the project root, deployments check that the working tree is clean before local builds. An individual failed deployment does not stop other queued sites; completed releases are not automatically rolled back. Batch rollback is unsupported.
+
+## Recovering failed deployments (unlock)
+
+A deployment interrupted by an instance failure, out-of-memory condition or terminated process may leave a Deployer lock behind. Once you've checked that no deployment is **still running** for the selected sites, unlock them without connecting manually to the host:
+
+```shell
+vendor/bin/ssdeploy unlock test-site
+vendor/bin/ssdeploy unlock test-site customer-one
+vendor/bin/ssdeploy unlock test-site --stage=prod
+```
+
+The command uses the project's configured SSH/SSM transport and invokes Deployer's built-in `deploy:unlock` task against each selected deployment path. It does not run Composer, rsync, asset builds, release switching or rollback. The selected destinations and confirmation prompt appear before unlocking, unless `--yes` is specified. Use `--dry-run` to review the destinations without connecting. With multiple hosts, aliases are required; `unlock --all` is deliberately unsupported to avoid removing active locks across an entire fleet. When a host has stage-specific paths, `--stage=prod` unlocks production instead of the default staging destination. This only removes deployment locks; it does not repair a partially created release.
 
 ## Transports
 
