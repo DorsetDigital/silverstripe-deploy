@@ -37,7 +37,7 @@ if (is_file($ignoreFile)) foreach (file($ignoreFile, FILE_IGNORE_NEW_LINES) as $
     $line = trim($line);
     if ($line !== '' && !str_starts_with($line, '#')) $excludes[] = $line;
 }
-$excludes = array_unique(array_merge($excludes, ['.git', 'vendor', 'node_modules']));
+$excludes = array_unique(array_merge($excludes, ['.git', 'vendor', 'node_modules', '.deploy-logs']));
 
 // Never create a new site root on a typo.
 task('deploy:check_target', function () {
@@ -81,7 +81,7 @@ task('deploy:composer', function () use ($config, $quotedImage) {
     run('mkdir -p ' . escapeshellarg($cache . '/cache'));
     run("docker pull $quotedImage");
     $cmd = "docker run --rm --user 1000:1000 -v {$release}:/app -v {$cache}:/tmp/composer -e COMPOSER_HOME=/tmp/composer -e COMPOSER_CACHE_DIR=/tmp/composer/cache -w /app $quotedImage composer install {$devFlag}--prefer-dist --no-interaction --no-progress --optimize-autoloader --classmap-authoritative";
-    $output = run($cmd); if (($config['composer']['show_output'] ?? false) && $output !== '') writeln($output);
+    $output = run($cmd); if ($output !== '') writeln($output);
 });
 
 task('deploy:assets', function () use ($config) {
@@ -146,7 +146,7 @@ task('deploy:silverstripe_build', function () use ($config, $quotedImage) {
     $release = escapeshellarg(get('release_path'));
     $shared = escapeshellarg(get('deploy_path') . '/shared');
     $output = run("docker run --rm --user 1000:1000 -v {$release}:/app -v {$shared}:/shared -w /app $quotedImage vendor/bin/sake dev/build 'flush=1'");
-    if (($config['silverstripe']['show_output'] ?? false) && $output !== '') writeln($output);
+    if ($output !== '') writeln($output);
 });
 
 task('deploy:before_symlink', function () use ($config) {
