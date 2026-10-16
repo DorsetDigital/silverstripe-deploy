@@ -1,0 +1,37 @@
+project:
+  name: Reflex
+server:
+  connection: ssm
+  instance_id: i-0123456789abcdef0
+  region: eu-west-2
+  user: ubuntu
+  # Default SSM trust: accept-new with a temporary known_hosts file
+deployment:
+  workers: 3
+  keep_releases: 2
+hosts:
+  logixs:
+    deploy_path: /var/www/sites/logixs
+  joshua-robert:
+    deploy_path: /var/www/sites/joshua-robert
+aws:
+  aws_account_id: 'YOUR_AWS_ACCOUNT_ID'
+  aws_region: eu-west-2
+php:
+  version: '8.3'
+composer:
+  install: true
+silverstripe:
+  dev_build: true
+assets:
+  enabled: true
+  image: node:14
+  command: yarn webpack --config webpack.config.js
+  output: public/build
+shared_dirs:
+  - public/assets
+shared_files:
+  - .env
+exclude:
+  - deploy.yml
+  - .deployignore

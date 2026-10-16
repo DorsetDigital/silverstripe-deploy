@@ -1,0 +1,28 @@
+project:
+  name: NAP
+server:
+  connection: ssh
+  host: deploy
+  user: ubuntu
+  port: 22
+hosts:
+  website:
+    staging_deploy_path: /var/www/sites/nap-transport-staging
+    prod_deploy_path: /var/www/sites/nap-transport
+aws:
+  aws_account_id: 'YOUR_AWS_ACCOUNT_ID'
+  aws_region: eu-west-2
+php:
+  version: '8.3'
+composer:
+  install: true
+  install_dev: false
+silverstripe:
+  dev_build: true
+shared_dirs:
+  - public/assets
+shared_files:
+  - .env
+exclude:
+  - deploy.yml
+  - .deployignore
