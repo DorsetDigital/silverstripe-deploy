@@ -58,11 +58,12 @@ final class Application
                     $transport->cleanup();
                 }
             }
-            if (!in_array($command, ['deploy', 'rollback'], true)) throw new \RuntimeException("Unknown command: $command");
+            if (!in_array($command, ['deploy', 'rollback', 'unlock'], true)) throw new \RuntimeException("Unknown command: $command");
             $this->validate($config, $targets);
             $sites = $options['_'];
             $all = isset($options['all']);
             if ($all && $sites !== []) throw new \RuntimeException('Specify site aliases OR --all, not both.');
+            if ($command === 'unlock' && $all) throw new \RuntimeException('Unlock requires explicit site aliases; --all is not supported.');
             if ($command === 'rollback' && ($all || count($sites) > 1)) {
                 throw new \RuntimeException('Batch rollback is deliberately unsupported.');
             }
@@ -74,8 +75,8 @@ final class Application
                     $selected[$site] = $targets[$site];
                 }
                 $targets = $selected;
-            } elseif ($command === 'rollback' && count($targets) !== 1) {
-                throw new \RuntimeException('Specify a site alias for rollback.');
+            } elseif (in_array($command, ['rollback', 'unlock'], true) && count($targets) !== 1) {
+                throw new \RuntimeException("Specify a site alias for $command.");
             }
             // With deploy, no site aliases means all configured targets.
             $workers = (int) ($options['workers'] ?? $config['deployment']['workers'] ?? 2);
@@ -386,7 +387,7 @@ IGNORE,
         while ($pending || $active) {
             while ($pending && count($active) < $workers) {
                 $site = array_shift($pending);
-                $process = new Process([PHP_BINARY, $deployerBin, 'deploy' === $action ? 'deploy' : 'rollback', $site, '-f', $this->packageRoot . '/recipe/deploy.php'], $projectRoot, [
+                $process = new Process([PHP_BINARY, $deployerBin, $action === 'unlock' ? 'deploy:unlock' : $action, $site, '-f', $this->packageRoot . '/recipe/deploy.php'], $projectRoot, [
                     'SSDEPLOY_CONFIG' => $configFile,
                     'SSDEPLOY_TARGET' => $site,
                     'SSDEPLOY_STAGE' => $stage,
@@ -430,6 +431,7 @@ ssdeploy — Silverstripe deployment CLI
   ssdeploy test-connection [--stage=staging]
   ssdeploy deploy [site ...] [--all] [--stage=staging] [--workers=2] [--dry-run] [--yes]
   ssdeploy rollback [site] [--stage=prod] [--yes]
+  ssdeploy unlock [site ...] [--stage=staging] [--yes]
 
 Run from the project directory containing deploy.yml.
 TEXT;
