@@ -158,6 +158,7 @@ deploy
 deploy.php
 deploy.yml
 .deployignore
+.deploy-logs/
 IGNORE,
         ];
         foreach ($files as $name => $contents) {
@@ -363,7 +364,6 @@ IGNORE,
         $deployerBin = $projectRoot . '/vendor/bin/dep';
         if (!is_file($deployerBin)) throw new \RuntimeException('Deployer binary missing: install package dependencies with Composer.');
 
-        // Stable colour per site, including when a worker slot is reused.
         $palette = [36, 35, 33, 34, 32, 96, 95, 93, 94, 92];
         $colours = [];
         foreach (array_keys($targets) as $index => $site) {
@@ -374,79 +374,107 @@ IGNORE,
             $label = "[$site]";
             return $colourEnabled ? "\033[" . $colours[$site] . "m" . $label . "\033[0m" : $label;
         };
-        // Keep a bounded diagnostic tail for every site, even in compact mode.
-        $buffers = []; $tails = []; $currentTasks = []; $tailLimit = 35;
-        $writeOutput = static function (string $site, string $chunk) use (&$buffers, &$tails, &$currentTasks, $tailLimit, $prefix, $verbose, $config): void {
+
+        $buffers = []; $currentTasks = []; $logs = []; $logPaths = []; $failureTasks = [];
+        $runId = date('Y-m-d_His') . '_' . bin2hex(random_bytes(3));
+        $logDir = $projectRoot . '/.deploy-logs/' . $runId;
+        $displayLine = static function (string $site, string $line) use (&$currentTasks, $prefix, $verbose, $config): void {
+            $plain = preg_replace('/\x1B\[[0-9;]*[A-Za-z]/', '', $line);
+            $isTask = preg_match('/(?:^|\s)task\s+([a-zA-Z][a-zA-Z0-9:_-]*)/', $plain, $match);
+            if ($isTask) $currentTasks[$site] = $match[1];
+            $task = $currentTasks[$site] ?? '';
+            $showConfigured = ($task === 'deploy:composer' && ($config['composer']['show_output'] ?? false))
+                || ($task === 'deploy:assets' && ($config['assets']['show_output'] ?? false))
+                || ($task === 'deploy:silverstripe_build' && ($config['silverstripe']['show_output'] ?? false));
+            if ($verbose || $isTask || $showConfigured) echo $prefix($site) . ' ' . $line . "\n";
+        };
+        $writeOutput = static function (string $site, string $chunk) use (&$buffers, &$logs, $displayLine): void {
+            // Log raw output before filtering; successful logs are deleted.
+            fwrite($logs[$site]['handle'], $chunk);
             $buffers[$site] = ($buffers[$site] ?? '') . $chunk;
             while (($newline = strpos($buffers[$site], "\n")) !== false) {
                 $line = rtrim(substr($buffers[$site], 0, $newline), "\r");
                 $buffers[$site] = substr($buffers[$site], $newline + 1);
-                if ($line === '') continue;
-                $tails[$site][] = $line;
-                if (count($tails[$site]) > $tailLimit) array_shift($tails[$site]);
-                // Deployer announces each task as "task deploy:...", unlike the
-                // often very noisy output of Composer, webpack and dev/build.
-                $plain = preg_replace('/\\x1B\\[[0-9;]*[A-Za-z]/', '', $line);
-                $isTask = preg_match('/(?:^|\\s)task\\s+([a-zA-Z][a-zA-Z0-9:_-]*)/', $plain, $match);
-                if ($isTask) $currentTasks[$site] = $match[1];
-                $task = $currentTasks[$site] ?? '';
-                $showConfigured = ($task === 'deploy:composer' && ($config['composer']['show_output'] ?? false))
-                    || ($task === 'deploy:silverstripe_build' && ($config['silverstripe']['show_output'] ?? false));
-                if ($verbose || $isTask || $showConfigured) {
-                    echo $prefix($site) . ' ' . $line . "\n";
-                }
+                if ($line !== '') $displayLine($site, $line);
             }
         };
 
-        while ($pending || $active) {
-            while ($pending && count($active) < $workers) {
-                $site = array_shift($pending);
-                $process = new Process([PHP_BINARY, $deployerBin, $action === 'unlock' ? 'deploy:unlock' : $action, $site, '-f', $this->packageRoot . '/recipe/deploy.php'], $projectRoot, [
-                    'SSDEPLOY_CONFIG' => $configFile,
-                    'SSDEPLOY_TARGET' => $site,
-                    'SSDEPLOY_STAGE' => $stage,
-                    'SSDEPLOY_TRANSPORT_HOST' => $transport['hostname'],
-                    'SSDEPLOY_SSH_CONFIG' => $transport['ssh_config'] ?? '',
-                    'SSDEPLOY_SSH_IDENTITY' => $transport['identity'] ?? '',
-                ]);
-                $process->setTimeout(null);
-                $process->start(static function ($type, $chunk) use ($site, $writeOutput): void {
-                    $writeOutput($site, $chunk);
-                });
-                $active[$site] = $process;
-                echo $prefix($site) . " START\n";
-            }
-            foreach ($active as $site => $process) {
-                if ($process->isRunning()) continue;
-                // Include any final unterminated line in diagnostics.
-                if (($buffers[$site] ?? '') !== '') {
-                    $line = $buffers[$site];
-                    $tails[$site][] = $line;
-                    if (count($tails[$site]) > $tailLimit) array_shift($tails[$site]);
-                    if ($verbose) echo $prefix($site) . ' ' . $line . "\n";
+        try {
+            while ($pending || $active) {
+                while ($pending && count($active) < $workers) {
+                    $site = array_shift($pending);
+                    $path = tempnam(sys_get_temp_dir(), 'ssdeploy-');
+                    if ($path === false) throw new \RuntimeException('Unable to create temporary deployment log.');
+                    $handle = fopen($path, 'wb');
+                    if ($handle === false) {
+                        unlink($path);
+                        throw new \RuntimeException('Unable to open temporary deployment log.');
+                    }
+                    $logs[$site] = ['path' => $path, 'handle' => $handle];
+                    $process = new Process([PHP_BINARY, $deployerBin, $action === 'unlock' ? 'deploy:unlock' : $action, $site, '-f', $this->packageRoot . '/recipe/deploy.php'], $projectRoot, [
+                        'SSDEPLOY_CONFIG' => $configFile,
+                        'SSDEPLOY_TARGET' => $site,
+                        'SSDEPLOY_STAGE' => $stage,
+                        'SSDEPLOY_TRANSPORT_HOST' => $transport['hostname'],
+                        'SSDEPLOY_SSH_CONFIG' => $transport['ssh_config'] ?? '',
+                        'SSDEPLOY_SSH_IDENTITY' => $transport['identity'] ?? '',
+                    ]);
+                    $process->setTimeout(null);
+                    $process->start(static function ($type, $chunk) use ($site, $writeOutput): void {
+                        $writeOutput($site, $chunk);
+                    });
+                    $active[$site] = $process;
+                    echo $prefix($site) . " START\n";
                 }
-                unset($buffers[$site]);
-                $status = $process->getExitCode();
-                if ($status === 0) {
-                    $done[] = $site;
-                    echo $prefix($site) . " DONE\n";
-                } else {
-                    $failed[] = $site;
-                    echo $prefix($site) . " FAIL (exit $status)\n";
-                    echo $prefix($site) . " Last " . count($tails[$site] ?? []) . " log lines:\n";
-                    foreach ($tails[$site] ?? [] as $line) echo $prefix($site) . ' ' . $line . "\n";
+                foreach ($active as $site => $process) {
+                    if ($process->isRunning()) continue;
+                    if (($buffers[$site] ?? '') !== '') {
+                        $displayLine($site, $buffers[$site]);
+                    }
+                    unset($buffers[$site]);
+                    $status = $process->getExitCode();
+                    fclose($logs[$site]['handle']);
+                    $logs[$site]['handle'] = null;
+                    if ($status === 0) {
+                        $done[] = $site;
+                        unlink($logs[$site]['path']);
+                        echo $prefix($site) . " DONE\n";
+                    } else {
+                        $failed[] = $site;
+                        $failureTasks[$site] = $currentTasks[$site] ?? 'unknown task';
+                        if (!is_dir($logDir) && !mkdir($logDir, 0700, true) && !is_dir($logDir)) {
+                            throw new \RuntimeException("Unable to create deployment log directory: $logDir");
+                        }
+                        $ignoreFile = $projectRoot . '/.deploy-logs/.gitignore';
+                        if (!is_file($ignoreFile)) file_put_contents($ignoreFile, "*\n!.gitignore\n");
+                        $destination = $logDir . '/' . $site . '.log';
+                        if (!rename($logs[$site]['path'], $destination)) {
+                            throw new \RuntimeException("Unable to save deployment log: $destination");
+                        }
+                        $logPaths[$site] = '.deploy-logs/' . $runId . '/' . $site . '.log';
+                        echo $prefix($site) . " FAIL (exit $status; {$failureTasks[$site]})\n";
+                    }
+                    unset($logs[$site], $currentTasks[$site], $active[$site]);
                 }
-                unset($tails[$site]);
-                unset($active[$site]);
+                if ($active) usleep(200000);
             }
-            if ($active) usleep(200000);
+        } finally {
+            foreach ($logs as $log) {
+                if (is_resource($log['handle'])) fclose($log['handle']);
+                if (is_file($log['path'])) unlink($log['path']);
+            }
         }
+
         echo "\nDeployment summary:\n";
         foreach (array_keys($targets) as $site) {
-            echo $prefix($site) . (in_array($site, $failed, true) ? ' FAILED' : ' OK') . "\n";
+            if (isset($logPaths[$site])) {
+                echo $prefix($site) . " FAILED ({$failureTasks[$site]})\n";
+                echo '  Log: ' . $logPaths[$site] . "\n";
+            } else {
+                echo $prefix($site) . " OK\n";
+            }
         }
         echo 'Finished: ' . count($done) . ' succeeded, ' . count($failed) . " failed.\n";
-        if ($failed) echo 'Failed sites: ' . implode(', ', $failed) . "\n";
         return $failed ? 1 : 0;
     }
 
