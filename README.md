@@ -32,7 +32,7 @@ A bare `deploy` selects every configured site; `--all` remains available as an e
 
 ## Project setup
 
-Run `vendor/bin/ssdeploy init` once in the project root. This creates three files **only if absent**: `deploy` (an executable Bash wrapper), `deploy.yml` (a documented SSH starter configuration with one host), and `.deployignore` (rsync exclusions). Existing files are skipped without modification. Review the generated YAML and supply the real server, AWS account, and deployment paths before deploying. Running `init` again is safe and reports which files already exist.
+Run `vendor/bin/ssdeploy init` once in the project root. This creates three files **only if absent**: `deploy` (an executable Bash wrapper), `deploy.yml` (a documented SSH starter configuration with one host), and `.deployignore` (rsync exclusions, including `.deploy-logs/`). Existing files are skipped without modification. Review the generated YAML and supply the real server, AWS account, and deployment paths before deploying. Running `init` again is safe and reports which files already exist.
 
 The generated wrapper is deployment-only: `./deploy` (all sites), `./deploy website` (one site), `./deploy website another-site --workers=2` (selected sites), or `./deploy --stage=prod` (all sites at their production paths). For administrative commands such as `sites`, `check`, `test-connection`, `rollback` and `unlock`, use `vendor/bin/ssdeploy`. Commit the three scaffolding files to your project repository.
 
@@ -175,12 +175,12 @@ The default stage is `staging`; only `staging` and `prod` are accepted. Deployme
 | `deployment` | `keep_releases` | Number of releases retained, default 2. |
 | `aws` | `aws_account_id`, `aws_region` | AWS ECR account and region used to form the PHP image URI; distinct from the SSM transport region. |
 | `php` | `version` | PHP ECR image suffix, default `8.3`. |
-| `composer` | `install`, `install_dev`, `show_output` | Defaults: `true`, `false`, `false`. |
+| `composer` | `install`, `install_dev`, `show_output` | Defaults: `true`, `false`, `false`. `show_output` controls console verbosity. |
 | `silverstripe` | `dev_build`, `show_output` | Defaults: `false`, `false`. |
 | `shared_dirs`, `shared_files`, `writable` | arrays | Deployer shared directories, shared files and writable directories. |
 | `exclude` | array | Additional rsync exclusions, combined with `.deployignore`; `.git`, `vendor` and `node_modules` are excluded automatically. |
 | `build.local` | array of shell commands | Run locally **once** before launching deployment workers. A failing command aborts the batch. |
-| `assets` | `enabled`, `image`, `command`, `output` | Per-site server-side Webpack build; defaults: `false`, `node:14`, `yarn webpack --config webpack.config.js`, `public/build`. |
+| `assets` | `enabled`, `image`, `command`, `output`, `show_output` | Per-site server-side Webpack build; defaults: `false`, `node:14`, `yarn webpack --config webpack.config.js`, `public/build`. |
 | `deploy` | `before_symlink`, `after_symlink` | Arrays of remote shell commands executed relative to the release path. |
 
 ### Local and server-side builds
@@ -201,6 +201,7 @@ assets:
   image: node:20
   command: yarn webpack --config webpack.config.js
   output: public/build
+  show_output: false
 ```
 
 The `assets` step is optional and runs **after Composer, before Silverstripe dev/build and before activating the release**. It requires `package.json`, `yarn.lock` and `<deploy_path>/shared/.env`. The server-side task installs dependencies in a shared, locked Node cache under `/home/ubuntu/.build-cache/<project>/node`, creates an isolated temporary workspace per site on the EC2 host, copies the site's `.env` into that workspace, and copies only the compiled output directory back to its NFS release. The output path is relative to the project root. Choose an image supported by the actual project; `node:14` is only the legacy default and is end-of-life.
@@ -222,13 +223,17 @@ vendor/bin/ssdeploy unlock test-site customer-one
 
 `--dry-run` only shows the selection summary: it does not connect or simulate remote tasks. `--yes` suppresses the confirmation prompt. With a Git repository at the project root, deployments check that the working tree is clean before local builds. An individual failed deployment does not stop other queued sites; completed releases are not automatically rolled back. Batch rollback is unsupported.
 
-## Batch output and failure summary
+## Deployment progress and failure logs
 
-By default, batch deployments show Deployer task names as progress indicators, alongside `START` / `DONE` / `FAIL` status for each site, then an ordered per-site summary identifying failures. Routine command output is suppressed unless explicitly requested with `composer.show_output: true`, `silverstripe.show_output: true`, or `--verbose`. If a site fails, its last 35 log lines are printed immediately to help diagnose the issue without searching through output from every successful deployment. This diagnostic tail is held only in memory during the run, and does not include the complete log. For the original full, interleaved per-site output, pass `--verbose`:
+For both single-site and multi-site runs, the console always shows per-site `START` / `DONE` / `FAIL` status and Deployer task progress. Detailed output from Composer, Silverstripe `dev/build`, and Webpack is controlled independently by `composer.show_output`, `silverstripe.show_output` and `assets.show_output`. All three default to `false`; an explicit `true` shows that operation's output regardless of site count. `--verbose` shows all output regardless of YAML settings.
+
+All raw Deployer output is captured to per-site temporary files while the commands run, even when not printed. Successful deployments delete their temporary logs. Failed deployments save the complete log locally to `.deploy-logs/<run-id>/<site>.log`, preserving the diagnostic context without dumping it into the live console stream. The final summary lists each site, marks failures with their last reported Deployer task, and provides paths to their full failure logs. The command exits nonzero if any site failed. Logs from earlier failures are not cleaned automatically.
+
+The log directory is created only after a failure; `.deploy-logs/.gitignore` is created at that point with `*` and `!.gitignore` entries. Add that file to your project repository if you want Git to retain the directory. Generated `.deployignore` files include `.deploy-logs/` by default, and the upload recipe excludes the directory independently, including in existing projects whose ignore files have not been regenerated.
 
 ```shell
+./deploy
 ./deploy --verbose
-vendor/bin/ssdeploy deploy test-site --verbose
 ```
 
 ## Recovering failed deployments (unlock)
