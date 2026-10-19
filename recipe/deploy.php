@@ -45,7 +45,7 @@ foreach (['shared_dirs', 'shared_files'] as $key) {
         if (!is_string($path) || $path === '' || str_starts_with($path, '/') ||
             str_contains($path, '\\') || !preg_match('~^[a-zA-Z0-9_./-]+$~', $path) ||
             in_array('.', explode('/', $path), true) || in_array('..', explode('/', $path), true)) {
-            throw new \\RuntimeException("Invalid shared path in $key: " . (is_scalar($path) ? (string)$path : gettype($path)));
+            throw new \RuntimeException("Invalid shared path in $key: " . (is_scalar($path) ? (string)$path : gettype($path)));
         }
         $sharedExcludes[] = '/' . $path . ($key === 'shared_dirs' ? '/' : '');
     }
