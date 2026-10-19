@@ -173,6 +173,7 @@ YAML,
 # Local dependencies and deployment tooling
 /vendor/
 /node_modules/
+/bin/
 /.deploy-logs/
 /deploy
 /deploy.php
