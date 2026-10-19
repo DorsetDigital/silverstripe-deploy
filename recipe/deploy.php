@@ -37,7 +37,20 @@ if (is_file($ignoreFile)) foreach (file($ignoreFile, FILE_IGNORE_NEW_LINES) as $
     $line = trim($line);
     if ($line !== '' && !str_starts_with($line, '#')) $excludes[] = $line;
 }
-$excludes = array_unique(array_merge($excludes, ['.git', 'vendor', 'node_modules', '.deploy-logs']));
+// Shared paths belong to the application/server and must never be uploaded
+// from a developer checkout. Anchor patterns at the rsync transfer root.
+$sharedExcludes = [];
+foreach (['shared_dirs', 'shared_files'] as $key) {
+    foreach ($config[$key] ?? [] as $path) {
+        if (!is_string($path) || $path === '' || str_starts_with($path, '/') ||
+            str_contains($path, '\\') || !preg_match('~^[a-zA-Z0-9_./-]+$~', $path) ||
+            in_array('.', explode('/', $path), true) || in_array('..', explode('/', $path), true)) {
+            throw new \RuntimeException("Invalid shared path in $key: " . (is_scalar($path) ? (string)$path : gettype($path)));
+        }
+        $sharedExcludes[] = '/' . $path . ($key === 'shared_dirs' ? '/' : '');
+    }
+}
+$excludes = array_unique(array_merge($excludes, ['.git', 'vendor', 'node_modules', '.deploy-logs'], $sharedExcludes));
 
 // Never create a new site root on a typo.
 task('deploy:check_target', function () {
