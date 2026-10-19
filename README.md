@@ -178,10 +178,16 @@ The default stage is `staging`; only `staging` and `prod` are accepted. Deployme
 | `composer` | `install`, `install_dev`, `show_output` | Defaults: `true`, `false`, `false`. `show_output` controls console verbosity. |
 | `silverstripe` | `dev_build`, `show_output` | Defaults: `false`, `false`. |
 | `shared_dirs`, `shared_files`, `writable` | arrays | Deployer shared directories, shared files and writable directories. |
-| `exclude` | array | Additional rsync exclusions, combined with `.deployignore`; `.git`, `vendor` and `node_modules` are excluded automatically. |
+| `exclude` | array | Additional rsync exclusions, combined with `.deployignore`; `.git`, `vendor`, `node_modules` and any configured `shared_dirs` / `shared_files` are excluded automatically. |
 | `build.local` | array of shell commands | Run locally **once** before launching deployment workers. A failing command aborts the batch. |
 | `assets` | `enabled`, `image`, `command`, `output`, `show_output` | Per-site server-side Webpack build; defaults: `false`, `node:14`, `yarn webpack --config webpack.config.js`, `public/build`. |
 | `deploy` | `before_symlink`, `after_symlink` | Arrays of remote shell commands executed relative to the release path. |
+
+### Shared files and directories
+
+Entries under `shared_dirs` and `shared_files` are automatically excluded from the rsync upload, regardless of the project's `.deployignore`. Exclusions are anchored at the project root (for example, `/public/assets/` and `/.env`) so unrelated paths are unaffected. Deployer continues to manage the links from each release to the existing shared storage. Shared paths must be relative paths within the project.
+
+**Important:** A fresh deployment must have its required shared files (such as `.env`) provisioned on the server in advance. They are no longer seeded from a local checkout, even on the first release.
 
 ### Local and server-side builds
 
