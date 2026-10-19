@@ -159,6 +159,15 @@ YAML,
 /.gitlab/
 /.idea/
 /.vscode/
+/.fleet/
+/.history/
+/.settings/
+/.metadata/
+/nbproject/
+/.project
+/.classpath
+/.buildpath
+/*.iml
 /.ddev/
 
 # Local dependencies and deployment tooling
@@ -190,6 +199,9 @@ YAML,
 /npm-debug.log*
 /.DS_Store
 /Thumbs.db
+/*.swp
+/*.swo
+/*~
 
 # Keep composer.json, composer.lock, package.json, yarn.lock,
 # webpack.config.js and generated public/build assets where required.
