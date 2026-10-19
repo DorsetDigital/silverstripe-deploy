@@ -115,20 +115,31 @@ cd "$(dirname "$0")"
 exec ./vendor/bin/ssdeploy deploy "$@"
 SH,
             'deploy.yml' => <<<'YAML'
-# Configure this file before deploying. See the package README for all options.
+# Silverstripe Deploy configuration
+# https://github.com/DorsetDigital/silverstripe-deploy
 project:
   name: Example Project
 
 server:
-  connection: ssh
-  host: deploy
+  connection: ssm
+  instance_id: i-REPLACE_WITH_INSTANCE_ID
+  region: eu-west-2
   user: ubuntu
   port: 22
+  # For direct SSH instead of SSM:
+  # connection: ssh
+  # host: deploy.example.com
+  # SSM host key validation (default: accept-new):
+  # host_key_checking: 'yes'
+  # known_hosts_file: /path/to/known_hosts
 
 hosts:
   website:
-    staging_deploy_path: /var/www/sites/example-staging
-    prod_deploy_path: /var/www/sites/example-production
+    # Use deploy_path for a single destination, regardless of stage:
+    deploy_path: /var/www/sites/example
+    # Or replace deploy_path with stage-specific destinations:
+    # staging_deploy_path: /var/www/sites/example-staging
+    # prod_deploy_path: /var/www/sites/example-production
 
 aws:
   aws_account_id: 'YOUR_AWS_ACCOUNT_ID'
@@ -137,17 +148,51 @@ aws:
 php:
   version: '8.3'
 
+deployment:
+  workers: 2
+  keep_releases: 2
+
 composer:
   install: true
   install_dev: false
+  show_output: false
 
 silverstripe:
   dev_build: true
+  show_output: false
 
 shared_dirs:
   - public/assets
 shared_files:
   - .env
+
+# Optional local build: runs once before any deployment workers start.
+# build:
+#   local:
+#     - ddev exec npm run build:prod
+
+# Optional per-site Webpack build on the deployment server.
+# assets:
+#   enabled: true
+#   image: node:20
+#   command: yarn webpack --config webpack.config.js
+#   output: public/build
+#   show_output: false
+
+# Optional additional rsync exclusions (also see .deployignore).
+# exclude:
+#   - /local-only/
+
+# Optional Deployer writable directories.
+# writable:
+#   - public/cache
+
+# Optional commands relative to each new release.
+# deploy:
+#   before_symlink:
+#     - echo 'Before switching release'
+#   after_symlink:
+#     - echo 'After switching release'
 YAML,
             '.deployignore' => <<<'IGNORE'
 # Project-local files excluded from rsync uploads.
