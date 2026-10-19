@@ -150,15 +150,50 @@ shared_files:
   - .env
 YAML,
             '.deployignore' => <<<'IGNORE'
-# Exclude files from rsync uploads.
-.git/
-vendor/
-node_modules/
-deploy
-deploy.php
-deploy.yml
-.deployignore
-.deploy-logs/
+# Project-local files excluded from rsync uploads.
+# Paths beginning with / are relative to the project root.
+
+# Version control and editor configuration
+/.git/
+/.github/
+/.gitlab/
+/.idea/
+/.vscode/
+/.ddev/
+
+# Local dependencies and deployment tooling
+/vendor/
+/node_modules/
+/.deploy-logs/
+/deploy
+/deploy.php
+/deploy.yml
+/.deployignore
+
+# Local Docker development environment
+/docker/
+/docker-compose.yml
+/docker-compose.yaml
+/docker-compose.*.yml
+/docker-compose.*.yaml
+/compose.yml
+/compose.yaml
+/compose.*.yml
+/compose.*.yaml
+
+# Local backups, diagnostic logs and OS noise
+/dump.sql
+/dump.sql.gz
+/*.sql.gz
+/*.sql.zip
+/yarn-error.log
+/npm-debug.log*
+/.DS_Store
+/Thumbs.db
+
+# Keep composer.json, composer.lock, package.json, yarn.lock,
+# webpack.config.js and generated public/build assets where required.
+# Shared paths such as public/assets and .env are excluded automatically.
 IGNORE,
         ];
         foreach ($files as $name => $contents) {
