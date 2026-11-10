@@ -120,6 +120,8 @@ task('deploy:assets', function () use ($config) {
         throw new \RuntimeException('assets.files must not contain duplicate paths');
     }
     $quotedAssetFiles = implode(' ', array_map('escapeshellarg', $assetFiles));
+    $envRunner = file_get_contents(__DIR__ . '/load-env.cjs');
+    if ($envRunner === false) throw new \RuntimeException('Unable to read asset build environment loader');
     if (!preg_match('~^[a-zA-Z0-9_./-]+$~', $outputDir) || str_contains($outputDir, '..')) throw new \RuntimeException('Invalid output path');
     $script = <<<'BASH'
 set -euo pipefail
@@ -187,7 +189,9 @@ mkdir -p "$workspace/site"
 rsync -a --exclude='/vendor/' --exclude='/node_modules/' --exclude='/public/assets/' --exclude='/public/build/' --exclude='/.env' --exclude='/.git/' "$release/" "$workspace/site/"
 cp -L "$site_env" "$workspace/site/.env"
 chmod 600 "$workspace/site/.env"
-docker run --rm --user 1000:1000 -v "$workspace/site:/usr/src/app" -v "$deps/node_modules:/opt/node_modules:ro" -w /usr/src/app "$image" sh -c 'ln -s /opt/node_modules node_modules && exec sh -c "$1"' sh "$build_cmd"
+printf '%s' __ENV_RUNNER_BASE64__ | base64 -d > "$workspace/site/.ssdeploy-env-runner.cjs"
+docker run --rm --user 1000:1000 -v "$workspace/site:/usr/src/app" -v "$deps/node_modules:/opt/node_modules:ro" -w /usr/src/app "$image" sh -c 'ln -s /opt/node_modules node_modules && exec node .ssdeploy-env-runner.cjs "$1"' sh "$build_cmd"
+rm -f "$workspace/site/.ssdeploy-env-runner.cjs"
 [ -d "$workspace/site/$output_dir" ] || { echo 'Build output missing' >&2; exit 1; }
 mkdir -p "$release/$output_dir"
 rsync -a --delete "$workspace/site/$output_dir/" "$release/$output_dir/"
@@ -197,6 +201,7 @@ BASH;
         '__CACHE__' => escapeshellarg($cache), '__IMAGE__' => escapeshellarg($nodeImage),
         '__COMMAND__' => escapeshellarg($buildCommand), '__OUTPUT__' => escapeshellarg($outputDir),
         '__ASSET_FILES__' => $quotedAssetFiles,
+        '__ENV_RUNNER_BASE64__' => escapeshellarg(base64_encode($envRunner)),
     ]);
     $output = run("printf '%s' '" . base64_encode($script) . "' | base64 -d | bash -se");
     if ($output !== '') writeln($output);
