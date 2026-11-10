@@ -410,6 +410,21 @@ IGNORE,
         if (!in_array($type, ['ssh', 'ssm'], true)) throw new \RuntimeException('connection must be ssh or ssm');
         if ($type === 'ssh' && empty($config['server']['host'])) throw new \RuntimeException('server.host required for SSH');
         if ($type === 'ssm' && (empty($config['server']['instance_id']) || empty($config['server']['region']))) throw new \RuntimeException('SSM needs instance_id and region');
+        $assetFiles = $config['assets']['files'] ?? [];
+        if (!is_array($assetFiles) || !array_is_list($assetFiles)) {
+            throw new \RuntimeException('assets.files must be a list of relative file paths');
+        }
+        foreach ($assetFiles as $file) {
+            if (!is_string($file) || !preg_match('~^[a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)*$~', $file)
+                || in_array('..', explode('/', $file), true)
+                || in_array($file, ['package.json', 'yarn.lock', '.env'], true)
+                || str_starts_with($file, 'node_modules/')) {
+                throw new \RuntimeException('Invalid assets.files path: ' . (is_scalar($file) ? (string) $file : gettype($file)));
+            }
+        }
+        if (count($assetFiles) !== count(array_unique($assetFiles))) {
+            throw new \RuntimeException('assets.files must not contain duplicate paths');
+        }
         foreach ($targets as $alias => $target) {
             if (!preg_match('~^/[a-zA-Z0-9_./-]+$~', $target['deploy_path']) || str_contains($target['deploy_path'], '..')) throw new \RuntimeException("Invalid absolute deployment path for $alias");
             if (!preg_match('/^[a-zA-Z0-9_.-]+$/', (string) $alias)) throw new \RuntimeException("Invalid site alias $alias");
