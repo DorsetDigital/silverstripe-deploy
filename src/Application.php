@@ -237,10 +237,18 @@ YAML,
 /compose.*.yaml
 
 # Local backups, diagnostic logs and OS noise
-/dump.sql
-/dump.sql.gz
-/*.sql.gz
-/*.sql.zip
+# Archive and database exports (match anywhere in the project)
+*.tar
+*.tar.gz
+*.tgz
+*.tar.bz2
+*.tar.xz
+*.zip
+*.7z
+*.rar
+*.sql
+*.sql.gz
+*.sql.zip
 /yarn-error.log
 /npm-debug.log*
 /.DS_Store
