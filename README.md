@@ -180,7 +180,7 @@ The default stage is `staging`; only `staging` and `prod` are accepted. Deployme
 | `shared_dirs`, `shared_files`, `writable` | arrays | Deployer shared directories, shared files and writable directories. |
 | `exclude` | array | Additional rsync exclusions, combined with `.deployignore`; `.git`, `vendor` and `node_modules` are excluded automatically. |
 | `build.local` | array of shell commands | Run locally **once** before launching deployment workers. A failing command aborts the batch. |
-| `assets` | `enabled`, `image`, `command`, `output`, `show_output` | Per-site server-side Webpack build; defaults: `false`, `node:14`, `yarn webpack --config webpack.config.js`, `public/build`. |
+| `assets` | `enabled`, `image`, `command`, `output`, `files`, `show_output` | Per-site server-side Webpack build; `files` optionally lists release-relative files required during Node dependency installation. Defaults: `false`, `node:14`, `yarn webpack --config webpack.config.js`, `public/build`, `[]`. |
 | `deploy` | `before_symlink`, `after_symlink` | Arrays of remote shell commands executed relative to the release path. |
 
 ### Local and server-side builds
@@ -201,10 +201,14 @@ assets:
   image: node:20
   command: yarn webpack --config webpack.config.js
   output: public/build
+  files:
+    - .npmrc
   show_output: false
 ```
 
 The `assets` step is optional and runs **after Composer, before Silverstripe dev/build and before activating the release**. It requires `package.json`, `yarn.lock` and `<deploy_path>/shared/.env`. The server-side task installs dependencies in a shared, locked Node cache under `/home/ubuntu/.build-cache/<project>/node`, creates an isolated temporary workspace per site on the EC2 host, copies the site's `.env` into that workspace, and copies only the compiled output directory back to its NFS release. The output path is relative to the project root. Choose an image supported by the actual project; `node:14` is only the legacy default and is end-of-life.
+
+The optional `assets.files` list specifies files already present in the deployed release that must also be available during `yarn install` (for example, a private npm registry's `.npmrc`). Paths are relative to the project root, must be regular files within the release, and may include subdirectories. Missing or invalid paths fail deployment with a clear error. The selected files are copied into the dependency installation directory and removed after installation, including when installation fails. Their contents contribute to the dependency cache key, so changing a token or other configuration forces dependency installation rather than reusing an old cache. Files remain available in the normal build workspace through the existing rsync copy. Do not commit secrets to source control; provision sensitive files securely in the release.
 
 These two kinds of build can coexist. To avoid unnecessary work, only enable the build stages your project needs. Server-side assets are currently designed for Yarn with a lockfile, not npm-only installations.
 
