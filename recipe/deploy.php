@@ -134,7 +134,7 @@ key=$(
   {
     sha256sum package.json yarn.lock
     for file in "${asset_files[@]}"; do
-      printf '%s\\n' "$file"
+      printf '%s\n' "$file"
       sha256sum "$file"
     done
   } | sha256sum | cut -d' ' -f1
