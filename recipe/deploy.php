@@ -91,6 +91,22 @@ task('deploy:assets', function () use ($config) {
     $nodeImage = $config['assets']['image'] ?? 'node:14';
     $buildCommand = $config['assets']['command'] ?? 'yarn webpack --config webpack.config.js';
     $outputDir = $config['assets']['output'] ?? 'public/build';
+    $assetFiles = $config['assets']['files'] ?? [];
+    if (!is_array($assetFiles) || !array_is_list($assetFiles)) {
+        throw new \RuntimeException('assets.files must be a list of relative file paths');
+    }
+    foreach ($assetFiles as $file) {
+        if (!is_string($file) || !preg_match('~^[a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)*$~', $file)
+            || in_array('..', explode('/', $file), true)
+            || in_array($file, ['package.json', 'yarn.lock', '.env'], true)
+            || str_starts_with($file, 'node_modules/')) {
+            throw new \RuntimeException('Invalid assets.files path: ' . (is_scalar($file) ? (string) $file : gettype($file)));
+        }
+    }
+    if (count($assetFiles) !== count(array_unique($assetFiles))) {
+        throw new \RuntimeException('assets.files must not contain duplicate paths');
+    }
+    $quotedAssetFiles = implode(' ', array_map('escapeshellarg', $assetFiles));
     if (!preg_match('~^[a-zA-Z0-9_./-]+$~', $outputDir) || str_contains($outputDir, '..')) throw new \RuntimeException('Invalid output path');
     $script = <<<'BASH'
 set -euo pipefail
@@ -100,10 +116,29 @@ cache_root=__CACHE__
 image=__IMAGE__
 build_cmd=__COMMAND__
 output_dir=__OUTPUT__
+asset_files=(__ASSET_FILES__)
 [ -f "$release/package.json" ] && [ -f "$release/yarn.lock" ] || { echo 'Missing package.json/yarn.lock' >&2; exit 1; }
 [ -f "$site_env" ] || { echo 'Missing site .env' >&2; exit 1; }
+release_real=$(realpath "$release")
+for file in "${asset_files[@]}"; do
+  [ -f "$release/$file" ] || { echo "Missing configured asset build file: $file" >&2; exit 1; }
+  source_real=$(realpath "$release/$file")
+  case "$source_real" in
+    "$release_real"/*) ;;
+    *) echo "Asset build file points outside release: $file" >&2; exit 1 ;;
+  esac
+done
 mkdir -p "$cache_root/dependencies" "$cache_root/workspaces" "$cache_root/yarn-cache"
-key=$(cd "$release" && sha256sum package.json yarn.lock | sha256sum | cut -d' ' -f1)
+key=$(
+  cd "$release"
+  {
+    sha256sum package.json yarn.lock
+    for file in "${asset_files[@]}"; do
+      printf '%s\\n' "$file"
+      sha256sum "$file"
+    done
+  } | sha256sum | cut -d' ' -f1
+)
 deps="$cache_root/dependencies/$key"
 exec 9>"$cache_root/.install.lock"
 if ! flock -n 9; then
@@ -116,7 +151,19 @@ else
   echo 'Node dependencies: installing (cache miss)'
   rm -rf "$deps"; mkdir -p "$deps"
   cp "$release/package.json" "$release/yarn.lock" "$deps/"
+  for file in "${asset_files[@]}"; do
+    mkdir -p "$deps/$(dirname "$file")"
+    cp "$release/$file" "$deps/$file"
+    chmod 600 "$deps/$file"
+  done
+  # Remove credentials and other supplemental files even if installation fails.
+  cleanup_install_files() {
+    for file in "${asset_files[@]}"; do rm -f "$deps/$file"; done
+  }
+  trap cleanup_install_files EXIT
   docker run --rm --user 1000:1000 -v "$deps:/usr/src/app" -v "$cache_root/yarn-cache:/tmp/yarn-cache" -e YARN_CACHE_FOLDER=/tmp/yarn-cache -w /usr/src/app "$image" sh -c 'yarn install --frozen-lockfile --non-interactive'
+  cleanup_install_files
+  trap - EXIT
   touch "$deps/.ready"
   echo 'Node dependencies: installation cached'
 fi
@@ -136,6 +183,7 @@ BASH;
         '__RELEASE__' => escapeshellarg($release), '__ENV__' => escapeshellarg("$root/shared/.env"),
         '__CACHE__' => escapeshellarg($cache), '__IMAGE__' => escapeshellarg($nodeImage),
         '__COMMAND__' => escapeshellarg($buildCommand), '__OUTPUT__' => escapeshellarg($outputDir),
+        '__ASSET_FILES__' => $quotedAssetFiles,
     ]);
     $output = run("printf '%s' '" . base64_encode($script) . "' | base64 -d | bash -se");
     if ($output !== '') writeln($output);
