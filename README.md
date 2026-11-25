@@ -183,6 +183,27 @@ The default stage is `staging`; only `staging` and `prod` are accepted. Deployme
 | `assets` | `enabled`, `image`, `command`, `output`, `files`, `show_output` | Per-site server-side Webpack build; `files` optionally lists release-relative files required during Node dependency installation. Defaults: `false`, `node:14`, `yarn webpack --config webpack.config.js`, `public/build`, `[]`. |
 | `deploy` | `before_symlink`, `after_symlink` | Arrays of remote shell commands executed relative to the release path. |
 
+### Standalone Docker hosts
+
+For an SSH-accessible Docker host using a locally built PHP image:
+
+```yaml
+docker:
+  command: sudo -n docker
+  uid: 1000
+  gid: 1000
+  network: your-compose-network
+
+php:
+  image: silverstripe-php:8.5
+  pull: false
+  site_mount: /var/www/site
+```
+
+Use the actual Docker network name. The optional network applies to PHP deployment containers. With `php.pull: false`, the image must already exist on the remote host. The optional site mount exposes the complete deployment directory at the specified container path, preserving relative shared links. Without it, the legacy PHP mounts remain unchanged. Docker command defaults to `docker`; both PHP and remote Node tasks use the configured command and numeric UID/GID (default 1000:1000). The remote SSH user must have access to Docker and writable cache directories. Noninteractive sudo must already be configured when selected.
+
+Composer and Node caches default to the remote user's home directory (`$HOME/.composer` and `$HOME/.build-cache`). Override their base directories with absolute paths using `composer.cache_path` and `assets.cache_path`.
+
 ### Shared files and directories
 
 Entries under `shared_dirs` and `shared_files` are automatically excluded from the rsync upload, regardless of the project's `.deployignore`. Exclusions are anchored at the project root (for example, `/public/assets/` and `/.env`) so unrelated paths are unaffected. Deployer continues to manage the links from each release to the existing shared storage. Shared paths must be relative paths within the project.
@@ -212,7 +233,7 @@ assets:
   show_output: false
 ```
 
-The `assets` step is optional and runs **after Composer, before Silverstripe dev/build and before activating the release**. It requires `package.json`, `yarn.lock` and `<deploy_path>/shared/.env`. The server-side task installs dependencies in a shared, locked Node cache under `/home/ubuntu/.build-cache/<project>/node`, creates an isolated temporary workspace per site on the EC2 host, copies the site's `.env` into that workspace, **loads its values into the Node build process environment**, and copies only the compiled output directory back to its NFS release. This allows tools such as Webpack to read the site's settings through `process.env` without adding `dotenv` to each project. Standard `KEY=value`, quoted values (including `#` colours), `export KEY=value`, and comments are supported; the file is parsed as data, not executed as a shell script. This is distinct from `assets.files`, which supplies files needed during dependency installation. The output path is relative to the project root. Choose an image supported by the actual project; `node:14` is only the legacy default and is end-of-life.
+The `assets` step is optional and runs **after Composer, before Silverstripe dev/build and before activating the release**. It requires `package.json`, `yarn.lock` and `<deploy_path>/shared/.env`. The server-side task installs dependencies in a shared, locked Node cache under `$HOME/.build-cache/<project>/node`, creates an isolated temporary workspace per site on the EC2 host, copies the site's `.env` into that workspace, **loads its values into the Node build process environment**, and copies only the compiled output directory back to its NFS release. This allows tools such as Webpack to read the site's settings through `process.env` without adding `dotenv` to each project. Standard `KEY=value`, quoted values (including `#` colours), `export KEY=value`, and comments are supported; the file is parsed as data, not executed as a shell script. This is distinct from `assets.files`, which supplies files needed during dependency installation. The output path is relative to the project root. Choose an image supported by the actual project; `node:14` is only the legacy default and is end-of-life.
 
 The optional `assets.files` list specifies files already present in the deployed release that must also be available during `yarn install` (for example, a private npm registry's `.npmrc`). Paths are relative to the project root, must be regular files within the release, and may include subdirectories. Missing or invalid paths fail deployment with a clear error. The selected files are copied into the dependency installation directory and removed after installation, including when installation fails. Their contents contribute to the dependency cache key, so changing a token or other configuration forces dependency installation rather than reusing an old cache. Files remain available in the normal build workspace through the existing rsync copy. Do not commit secrets to source control; provision sensitive files securely in the release.
 
