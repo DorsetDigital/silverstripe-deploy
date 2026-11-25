@@ -83,24 +83,56 @@ task('deploy:rsync', function () use ($excludes, $server) {
     runLocally('rsync -az --delete ' . $args . ' -e ' . escapeshellarg($sshCmd) . ' ' . escapeshellarg($source) . ' ' . escapeshellarg($remote));
 });
 
-$phpImage = sprintf('%s.dkr.ecr.%s.amazonaws.com/php-fpm-%s', $config['aws']['aws_account_id'] ?? '', $config['aws']['aws_region'] ?? '', $config['php']['version'] ?? '8.3');
+$phpImage = $config['php']['image'] ?? sprintf('%s.dkr.ecr.%s.amazonaws.com/php-fpm-%s', $config['aws']['aws_account_id'] ?? '', $config['aws']['aws_region'] ?? '', $config['php']['version'] ?? '8.3');
 $quotedImage = escapeshellarg($phpImage);
+$docker = $config['docker']['command'] ?? 'docker';
+if (!in_array($docker, ['docker', 'sudo -n docker'], true)) {
+    throw new \RuntimeException('docker.command must be docker or sudo -n docker');
+}
+$uid = (string)($config['docker']['uid'] ?? 1000);
+$gid = (string)($config['docker']['gid'] ?? 1000);
+if (!ctype_digit($uid) || !ctype_digit($gid)) throw new \RuntimeException('Invalid Docker UID/GID');
+$dockerUser = "$uid:$gid";
+$network = isset($config['docker']['network']) ? ' --network ' . escapeshellarg($config['docker']['network']) : '';
+$pull = (bool)($config['php']['pull'] ?? true);
+$pullOption = $pull ? '' : ' --pull=never';
 
-task('deploy:composer', function () use ($config, $quotedImage) {
+// Resolve HOME remotely, not on the developer workstation.
+$remoteHome = static fn(): string => trim(run('printf "%s" "$HOME"'));
+
+// Opt in to mounting the complete release tree at the runtime path.
+$phpMounts = static function (bool $build = false) use ($config): array {
+    if (isset($config['php']['site_mount'])) {
+        $mount = rtrim($config['php']['site_mount'], '/');
+        if (!preg_match('~^/[a-zA-Z0-9_./-]+$~', $mount) || in_array('..', explode('/', $mount), true)) {
+            throw new \RuntimeException('Invalid php.site_mount');
+        }
+        $root = rtrim(get('deploy_path'), '/');
+        $release = get('release_path');
+        if (!str_starts_with($release, $root . '/')) throw new \RuntimeException('Release outside deployment root');
+        return ['-v ' . escapeshellarg("$root:$mount"), escapeshellarg($mount . substr($release, strlen($root)))];
+    }
+    $volumes = '-v ' . escapeshellarg(get('release_path') . ':/app');
+    if ($build) $volumes .= ' -v ' . escapeshellarg(get('deploy_path') . '/shared:/shared');
+    return [$volumes, '/app'];
+};
+
+task('deploy:composer', function () use ($config, $quotedImage, $docker, $dockerUser, $network, $pull, $pullOption, $remoteHome, $phpMounts) {
     if (!(bool)($config['composer']['install'] ?? true)) return;
-    $release = escapeshellarg(get('release_path'));
-    $cache = '/home/ubuntu/.composer';
+    [$volumes, $workdir] = $phpMounts();
+    $cache = $config['composer']['cache_path'] ?? ($remoteHome() . '/.composer');
     $devFlag = !($config['composer']['install_dev'] ?? false) ? '--no-dev ' : '';
     run('mkdir -p ' . escapeshellarg($cache . '/cache'));
-    run("docker pull $quotedImage");
-    $cmd = "docker run --rm --user 1000:1000 -v {$release}:/app -v {$cache}:/tmp/composer -e COMPOSER_HOME=/tmp/composer -e COMPOSER_CACHE_DIR=/tmp/composer/cache -w /app $quotedImage composer install {$devFlag}--prefer-dist --no-interaction --no-progress --optimize-autoloader --classmap-authoritative";
+    if ($pull) run("$docker pull $quotedImage");
+    $cacheVolume = escapeshellarg($cache . ':/tmp/composer');
+    $cmd = "{$docker} run --rm{$pullOption}{$network} --user {$dockerUser} {$volumes} -v {$cacheVolume} -e COMPOSER_HOME=/tmp/composer -e COMPOSER_CACHE_DIR=/tmp/composer/cache -w {$workdir} $quotedImage composer install {$devFlag}--prefer-dist --no-interaction --no-progress --optimize-autoloader --classmap-authoritative";
     $output = run($cmd); if ($output !== '') writeln($output);
 });
 
-task('deploy:assets', function () use ($config) {
+task('deploy:assets', function () use ($config, $docker, $dockerUser, $remoteHome) {
     if (!(bool)($config['assets']['enabled'] ?? false)) return;
     $release = get('release_path'); $root = get('deploy_path');
-    $cache = '/home/ubuntu/.build-cache/' . preg_replace('/[^a-zA-Z0-9_.-]/', '-', get('application')) . '/node';
+    $cache = ($config['assets']['cache_path'] ?? ($remoteHome() . '/.build-cache')) . '/' . preg_replace('/[^a-zA-Z0-9_.-]/', '-', get('application')) . '/node';
     $nodeImage = $config['assets']['image'] ?? 'node:14';
     $buildCommand = $config['assets']['command'] ?? 'yarn webpack --config webpack.config.js';
     $outputDir = $config['assets']['output'] ?? 'public/build';
@@ -176,7 +208,7 @@ else
     for file in "${asset_files[@]}"; do rm -f "$deps/$file"; done
   }
   trap cleanup_install_files EXIT
-  docker run --rm --user 1000:1000 -v "$deps:/usr/src/app" -v "$cache_root/yarn-cache:/tmp/yarn-cache" -e YARN_CACHE_FOLDER=/tmp/yarn-cache -w /usr/src/app "$image" sh -c 'yarn install --frozen-lockfile --non-interactive'
+  __DOCKER__ run --rm --user __DOCKER_USER__ -v "$deps:/usr/src/app" -v "$cache_root/yarn-cache:/tmp/yarn-cache" -e YARN_CACHE_FOLDER=/tmp/yarn-cache -w /usr/src/app "$image" sh -c 'yarn install --frozen-lockfile --non-interactive'
   cleanup_install_files
   trap - EXIT
   touch "$deps/.ready"
@@ -190,13 +222,14 @@ rsync -a --exclude='/vendor/' --exclude='/node_modules/' --exclude='/public/asse
 cp -L "$site_env" "$workspace/site/.env"
 chmod 600 "$workspace/site/.env"
 printf '%s' __ENV_RUNNER_BASE64__ | base64 -d > "$workspace/site/.ssdeploy-env-runner.cjs"
-docker run --rm --user 1000:1000 -v "$workspace/site:/usr/src/app" -v "$deps/node_modules:/opt/node_modules:ro" -w /usr/src/app "$image" sh -c 'ln -s /opt/node_modules node_modules && exec node .ssdeploy-env-runner.cjs "$1"' sh "$build_cmd"
+__DOCKER__ run --rm --user __DOCKER_USER__ -v "$workspace/site:/usr/src/app" -v "$deps/node_modules:/opt/node_modules:ro" -w /usr/src/app "$image" sh -c 'ln -s /opt/node_modules node_modules && exec node .ssdeploy-env-runner.cjs "$1"' sh "$build_cmd"
 rm -f "$workspace/site/.ssdeploy-env-runner.cjs"
 [ -d "$workspace/site/$output_dir" ] || { echo 'Build output missing' >&2; exit 1; }
 mkdir -p "$release/$output_dir"
 rsync -a --delete "$workspace/site/$output_dir/" "$release/$output_dir/"
 BASH;
     $script = strtr($script, [
+        '__DOCKER__' => $docker, '__DOCKER_USER__' => $dockerUser,
         '__RELEASE__' => escapeshellarg($release), '__ENV__' => escapeshellarg("$root/shared/.env"),
         '__CACHE__' => escapeshellarg($cache), '__IMAGE__' => escapeshellarg($nodeImage),
         '__COMMAND__' => escapeshellarg($buildCommand), '__OUTPUT__' => escapeshellarg($outputDir),
@@ -207,11 +240,10 @@ BASH;
     if ($output !== '') writeln($output);
 });
 
-task('deploy:silverstripe_build', function () use ($config, $quotedImage) {
+task('deploy:silverstripe_build', function () use ($config, $quotedImage, $docker, $dockerUser, $network, $pullOption, $phpMounts) {
     if (!(bool)($config['silverstripe']['dev_build'] ?? false)) return;
-    $release = escapeshellarg(get('release_path'));
-    $shared = escapeshellarg(get('deploy_path') . '/shared');
-    $output = run("docker run --rm --user 1000:1000 -v {$release}:/app -v {$shared}:/shared -w /app $quotedImage vendor/bin/sake dev/build 'flush=1'");
+    [$volumes, $workdir] = $phpMounts(true);
+    $output = run("{$docker} run --rm{$pullOption}{$network} --user {$dockerUser} {$volumes} -w {$workdir} $quotedImage vendor/bin/sake dev/build 'flush=1'");
     if ($output !== '') writeln($output);
 });
 
